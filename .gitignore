@@ -1,0 +1,30 @@
+# ---- Visual Studio ----
+.vs/
+x64/
+Debug/
+Release/
+*.ipch
+*.suo
+*.user
+*.tlog
+*.log
+*.pdb
+
+# ---- Qt / qmake 生成 ----
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+Makefile*
+*.pro.user*
+
+# ---- MNIST 数据集（体积大，可重新下载）----
+MNIST_data.zip
+MNIST_data/
+*.gz
+*.idx3-ubyte
+*.idx1-ubyte
+
+# ---- 其它 ----
+*.obj
+*.exe
+*.ilk

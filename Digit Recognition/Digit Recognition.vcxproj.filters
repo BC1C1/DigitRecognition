@@ -1,0 +1,192 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>qrc;rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Form Files">
+      <UniqueIdentifier>{99349809-55BA-4b9d-BF79-8FDBB0286EB3}</UniqueIdentifier>
+      <Extensions>ui</Extensions>
+    </Filter>
+    <Filter Include="Translation Files">
+      <UniqueIdentifier>{639EADAA-A684-42e4-A9AD-28FC9BCB8F7C}</UniqueIdentifier>
+      <Extensions>ts</Extensions>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>qml;cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files\Components">
+      <UniqueIdentifier>{04a05652-42e6-42fa-b1e3-9bb080f6dce5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Components">
+      <UniqueIdentifier>{559575d0-3e1b-408a-9429-eedcd6eaff20}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Components\Layer">
+      <UniqueIdentifier>{3fb78b09-2e38-43e7-8d16-bcd8d0058e8a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Components\LossFunction">
+      <UniqueIdentifier>{049e509f-6268-47de-b746-08bc9249550c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Components\Optimizer">
+      <UniqueIdentifier>{94a828bd-fa1a-49f0-a250-327ded586eb2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Components\Model">
+      <UniqueIdentifier>{5826bdfa-91e1-44ee-b1f9-c3bf334d37be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Utils">
+      <UniqueIdentifier>{d5a49a60-25d9-4cb9-abc2-635295976bc4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Utils\Matrix">
+      <UniqueIdentifier>{7b2308bc-3815-4078-9c1f-e23d6240048c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Views">
+      <UniqueIdentifier>{57ab4748-4c7d-4910-8d6f-ff7843f57765}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Config">
+      <UniqueIdentifier>{d7572af7-6eec-40e1-b31e-3b938e16785a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Components\Layer">
+      <UniqueIdentifier>{77887fcb-ab40-4d4b-ad9a-97472790e3dd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Components\LossFunction">
+      <UniqueIdentifier>{08f96e66-849c-4098-b7ff-e794c0dd53a5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Components\Optimizer">
+      <UniqueIdentifier>{501f46ba-ff35-497b-aa6a-2ecf311f81fc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Components\Model">
+      <UniqueIdentifier>{90dcc2af-e6ba-49fa-b840-0b329bd17353}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Utils">
+      <UniqueIdentifier>{558b0120-bbfc-4185-a109-523cd51a088e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Utils\Matrix">
+      <UniqueIdentifier>{42e4122e-c44e-4105-97bb-13d0e694c9ce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Views">
+      <UniqueIdentifier>{a2e85760-ed58-4a28-847d-57484932af47}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="MainWindow.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtUic Include="MainWindow.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Matrix.cpp">
+      <Filter>Source Files\Utils\Matrix</Filter>
+    </ClCompile>
+    <ClCompile Include="Layer.cpp">
+      <Filter>Source Files\Components\Layer</Filter>
+    </ClCompile>
+    <ClCompile Include="Linear.cpp">
+      <Filter>Source Files\Components\Layer</Filter>
+    </ClCompile>
+    <ClCompile Include="LossFunction.cpp">
+      <Filter>Source Files\Components\LossFunction</Filter>
+    </ClCompile>
+    <ClCompile Include="MSELoss.cpp">
+      <Filter>Source Files\Components\LossFunction</Filter>
+    </ClCompile>
+    <ClCompile Include="Optimizer.cpp">
+      <Filter>Source Files\Components\Optimizer</Filter>
+    </ClCompile>
+    <ClCompile Include="SGD.cpp">
+      <Filter>Source Files\Components\Optimizer</Filter>
+    </ClCompile>
+    <ClCompile Include="Model.cpp">
+      <Filter>Source Files\Components\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="MainWindow.cpp">
+      <Filter>Source Files\Views</Filter>
+    </ClCompile>
+    <ClCompile Include="CrossEntropyLoss.cpp">
+      <Filter>Source Files\Components\LossFunction</Filter>
+    </ClCompile>
+    <ClCompile Include="ReLU.cpp">
+      <Filter>Source Files\Components\Layer</Filter>
+    </ClCompile>
+    <ClCompile Include="DataReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Conv2D.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Tensor.cpp">
+      <Filter>Source Files\Utils\Matrix</Filter>
+    </ClCompile>
+    <ClCompile Include="TypeDefine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Layer.h">
+      <Filter>Header Files\Components\Layer</Filter>
+    </ClInclude>
+    <ClInclude Include="Linear.h">
+      <Filter>Header Files\Components\Layer</Filter>
+    </ClInclude>
+    <ClInclude Include="LossFunction.h">
+      <Filter>Header Files\Components\LossFunction</Filter>
+    </ClInclude>
+    <ClInclude Include="MSELoss.h">
+      <Filter>Header Files\Components\LossFunction</Filter>
+    </ClInclude>
+    <ClInclude Include="Optimizer.h">
+      <Filter>Header Files\Components\Optimizer</Filter>
+    </ClInclude>
+    <ClInclude Include="SGD.h">
+      <Filter>Header Files\Components\Optimizer</Filter>
+    </ClInclude>
+    <ClInclude Include="Model.h">
+      <Filter>Header Files\Components\Model</Filter>
+    </ClInclude>
+    <ClInclude Include="Matrix.h">
+      <Filter>Header Files\Utils\Matrix</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperParam.h">
+      <Filter>Header Files\Config</Filter>
+    </ClInclude>
+    <ClInclude Include="CrossEntropyLoss.h">
+      <Filter>Header Files\Components\LossFunction</Filter>
+    </ClInclude>
+    <ClInclude Include="DataReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Conv2D.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Tensor.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="ReLU.h">
+      <Filter>Header Files\Components\Layer</Filter>
+    </ClInclude>
+    <ClInclude Include="TypeDefine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="MainWindow.h">
+      <Filter>Header Files\Views</Filter>
+    </QtMoc>
+  </ItemGroup>
+</Project>

@@ -24,6 +24,13 @@ struct MatrixData
 			newData[i] = data[i];
 		return new MatrixData(newData, row, col);
 	}
+	void fill(const MatrixData* other) {
+		// 不检查，仅被Matrix调用
+		size_t size = row * col;
+		for (size_t i = 0; i < size; i++) {
+			data[i] = other->data[i];
+		}
+	}
 private:
 	MatrixData(double* data, size_t row, size_t col) : row(row), col(col), data(data) {}
 };
@@ -52,6 +59,7 @@ public:
 		other.data = nullptr;
 		return *this;
 	}
+
 	// meta
 	size_t rows() const {
 		return data->row;
@@ -119,6 +127,7 @@ public:
 				ret.data->data[ret.index(i, j)] = func((*this)(i, j));
 		return ret;
 	}
+
 	Matrix fill(double value) const {
 		Matrix ret(rows(), cols());
 		for (size_t i = 0; i < rows(); i++)
@@ -126,6 +135,24 @@ public:
 				ret.data->data[ret.index(i, j)] = value;
 		return ret;
 	}
+
+	void fill(double value) {
+		const size_t r = rows(), c = cols();
+		double* p = data->data;
+		for (size_t i = 0; i < r; i++) {
+			double* rowp = p + i * c;
+			for (size_t j = 0; j < c; j++)
+				rowp[j] = value;
+		}
+	}
+
+	void fill(const Matrix& other) {
+		assert(other.data != nullptr && "fill: 源为空");
+		assert(other.data != data && "fill: 源与目标共用同一块缓冲");
+		assert(rows() == other.rows() && cols() == other.cols() && "fill: 尺寸不一致");
+		data->fill(other.data);
+	}
+
 	// factory
 	static Matrix zeroMatrix(size_t row, size_t col) {
 		Matrix ret(row, col);
@@ -206,7 +233,7 @@ public:
 		int64_t B_cols = B.cols();
 		int64_t ret_cols = ret.cols();
 
-#pragma omp parallel num_threads(16)
+#pragma omp parallel
 		{
 #pragma omp for schedule(dynamic)
 			for (int64_t bi = 0; bi < M; bi += blocksize)
@@ -307,7 +334,7 @@ public:
 		return ret;
 	}
 
-	// 水平归约：把 __m256d 的 4 个 double 加起来
+	// 4 个 double 加起来
 	static inline double hsum_pd(__m256d v) {
 		__m128d lo = _mm256_castpd256_pd128(v);
 		__m128d hi = _mm256_extractf128_pd(v, 1);
@@ -403,6 +430,8 @@ public:
 		const int64_t B_cols = (int64_t)B.cols();
 		const int64_t out_cols = (int64_t)out.cols();
 
+		int64_t blocksize = 64; // 临时覆盖
+
 		//std::memset(out_data, 0, (size_t)M * N * sizeof(double));
 
 #pragma omp parallel
@@ -452,6 +481,8 @@ public:
 		const int64_t A_cols = (int64_t)A.cols();   // = M
 		const int64_t B_cols = (int64_t)B.cols();   // = N
 		const int64_t out_cols = (int64_t)out.cols();
+
+		int64_t blocksize = 16; // 临时覆盖
 
 		//std::memset(out_data, 0, (size_t)M * N * sizeof(double));
 
@@ -553,6 +584,7 @@ public:
 private:
 	MatrixData* data;
 	static int64_t blocksize;
+	friend struct MatrixData;
 private:
 	size_t index(size_t i, size_t j) const {
 		assert(i < rows() && j < cols() && "index out of range");

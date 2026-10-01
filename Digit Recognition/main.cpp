@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
     std::vector<size_t> indices(M);
     std::iota(indices.begin(), indices.end(), 0);
     size_t batchSize = 64;
-    int times = 10;
+    int times = 3;
 
     // 全局累计，单位ms
     double sum_data = 0.0;

@@ -16,6 +16,8 @@ private:
 	//Matrix W_T;
 	Matrix b;
 	Matrix cache;
+	Matrix forwardPartCache;    // forward 的输出缓冲（复用，避免每批分配）
+	Matrix backwardRetCache;    // backward 的返回值缓冲（复用）
 
 	Matrix dw;
 	Matrix db;

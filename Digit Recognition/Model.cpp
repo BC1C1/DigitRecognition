@@ -12,6 +12,9 @@ double Model::train_step(const Matrix& input, const Matrix& real)
 
 Matrix Model::forward(const Matrix& input)
 {
+    // 这里就是海量深拷贝，其实拷贝是正常的，前面写fill是为了少分配不是不拷贝
+    // 如果真的要解决，需要一个动态大小的矩阵，寻址会变成地狱，这里真的要做优化只能上内存池，缓解分配开销
+    // backward也一样
     Matrix temp = input;
     for (size_t i = 0; i < layers.size(); i++) {
         temp = layers[i]->forward(temp);

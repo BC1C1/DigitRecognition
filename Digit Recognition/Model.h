@@ -36,5 +36,6 @@ private:
 	std::vector<std::shared_ptr<Layer>> layers;
 	std::shared_ptr<SGD> op;
 	std::shared_ptr<LossFunction> lossFunction;
+
 };
 

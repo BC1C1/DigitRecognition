@@ -11,7 +11,7 @@
 class Optimizer : public SGD
 {
 public:
-	Optimizer() : learning_rate(::learning_rate) {}
+	Optimizer() : learning_rate(cfg::learning_rate) {}
 
 	virtual void step() override;
 

@@ -6,17 +6,9 @@ class ReLU : public Layer
 {
 public:
 	virtual Matrix forward(const Matrix& x) override {
-		if (!is_used) {
-			xCache = x.foreach_do([](double x) -> double {
-				return x > 0 ? x : 0;
-			});
-			is_used = true;
-		}
-		else {
-			xCache.fill(x.foreach_do([](double x) -> double {
-				return x > 0 ? x : 0;
-			}));
-		}
+		xCache = x.foreach_do([](double x) -> double {
+			return x > 0 ? x : 0;
+		});
 		return xCache;
 	}
 	virtual Matrix backward(const Matrix& gard) override {
@@ -29,6 +21,5 @@ public:
 	}
 private:
 	Matrix xCache;
-	bool is_used = false;
 };
 

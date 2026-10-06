@@ -4,7 +4,7 @@ Linear::Linear(size_t input_dim, size_t output_dim)
 {
 	W = Matrix::randnMatrix(output_dim, input_dim) * std::sqrt(2.0 / input_dim);
 	//W_T = W.transpose();
-	b = Matrix::randnMatrix(1, output_dim);
+	b = Matrix::zeroMatrix(1, output_dim);
 
 	dw = Matrix(output_dim, input_dim);
 	db = Matrix(1, output_dim);
@@ -27,7 +27,7 @@ Matrix Linear::forward(const Matrix& x)
 
 Matrix Linear::backward(const Matrix& gard)
 {
-	// 同理：梯度缓冲依赖 gard 的批大小
+	// 同理
 	if (backwardRetCache.rows() != gard.rows() || backwardRetCache.cols() != W.cols()) {
 		backwardRetCache = Matrix(gard.rows(), W.cols());   // (B, I)
 	}

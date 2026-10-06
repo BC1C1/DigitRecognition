@@ -66,6 +66,7 @@
     <ClCompile>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <Optimization>Full</Optimization>
     </ClCompile>
     <Link>
       <Profile>false</Profile>
@@ -93,7 +94,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
@@ -107,6 +108,7 @@
     <ClCompile Include="Linear.cpp" />
     <ClCompile Include="LossFunction.cpp" />
     <ClCompile Include="Matrix.cpp" />
+    <ClCompile Include="MaxPool2D.cpp" />
     <ClCompile Include="Model.cpp" />
     <ClCompile Include="MSELoss.cpp" />
     <ClCompile Include="Optimizer.cpp" />
@@ -129,6 +131,8 @@
     <ClInclude Include="Linear.h" />
     <ClInclude Include="LossFunction.h" />
     <ClInclude Include="Matrix.h" />
+    <ClInclude Include="MaxPool2D.h" />
+    <ClInclude Include="MaxPoolTest.h" />
     <ClInclude Include="Model.h" />
     <ClInclude Include="MSELoss.h" />
     <ClInclude Include="Optimizer.h" />

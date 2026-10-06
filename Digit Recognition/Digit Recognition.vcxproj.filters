@@ -72,6 +72,12 @@
     <Filter Include="Source Files\Views">
       <UniqueIdentifier>{a2e85760-ed58-4a28-847d-57484932af47}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Test">
+      <UniqueIdentifier>{d4341376-0e08-47b3-ba44-83659bdd1f9c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Test">
+      <UniqueIdentifier>{abf66f7d-7ce5-43ec-bb2c-48a7ddb10e27}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="MainWindow.qrc">
@@ -121,16 +127,19 @@
     <ClCompile Include="ReLU.cpp">
       <Filter>Source Files\Components\Layer</Filter>
     </ClCompile>
-    <ClCompile Include="DataReader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Conv2D.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Tensor.cpp">
       <Filter>Source Files\Utils\Matrix</Filter>
     </ClCompile>
+    <ClCompile Include="Conv2D.cpp">
+      <Filter>Source Files\Components\Layer</Filter>
+    </ClCompile>
+    <ClCompile Include="DataReader.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
     <ClCompile Include="TypeDefine.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="MaxPool2D.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -168,19 +177,25 @@
     <ClInclude Include="CrossEntropyLoss.h">
       <Filter>Header Files\Components\LossFunction</Filter>
     </ClInclude>
-    <ClInclude Include="DataReader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Conv2D.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Tensor.h">
       <Filter>Header Files\Utils</Filter>
     </ClInclude>
     <ClInclude Include="ReLU.h">
       <Filter>Header Files\Components\Layer</Filter>
     </ClInclude>
+    <ClInclude Include="Conv2D.h">
+      <Filter>Header Files\Components\Layer</Filter>
+    </ClInclude>
     <ClInclude Include="TypeDefine.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="DataReader.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="MaxPoolTest.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="MaxPool2D.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

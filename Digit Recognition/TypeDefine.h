@@ -13,7 +13,7 @@ struct MatrixData
 	size_t row;
 	size_t col;
 	MatrixData(size_t row, size_t col) : row(row), col(col) {
-		data = new double[row * col];
+		data = new double[row * col]();
 	}
 	MatrixData(const MatrixData&) = delete;
 	MatrixData& operator=(const MatrixData&) = delete;
@@ -80,26 +80,26 @@ public:
 	// trans
 	Matrix transpose() const
 	{
-		size_t M = rows();
-		size_t N = cols();
+		int64_t M = rows();
+		int64_t N = cols();
 		Matrix ret(N, M);
 
 		const double* src = data->data;
 		double* dst = ret.data->data;
 
-		const size_t src_stride = cols();
-		const size_t dst_stride = ret.cols();
+		const int64_t src_stride = cols();
+		const int64_t dst_stride = ret.cols();
 
-		constexpr size_t tile = 16;
+		constexpr int64_t tile = 16;
 
 #pragma omp parallel for num_threads(16) schedule(dynamic)
-		for (size_t i0 = 0; i0 < M; i0 += tile) {
-			size_t i1 = std::min(i0 + tile, M);
-			for (size_t j0 = 0; j0 < N; j0 += tile) {
-				size_t j1 = std::min(j0 + tile, N);
-				for (size_t i = i0; i < i1; i++) {
+		for (int64_t i0 = 0; i0 < M; i0 += tile) {
+			int64_t i1 = std::min(i0 + tile, M);
+			for (int64_t j0 = 0; j0 < N; j0 += tile) {
+				int64_t j1 = std::min(j0 + tile, N);
+				for (int64_t i = i0; i < i1; i++) {
 					const double* src_row = src + i * src_stride;
-					for (size_t j = j0; j < j1; j++) {
+					for (int64_t j = j0; j < j1; j++) {
 						dst[j * dst_stride + i] = src_row[j];
 					}
 				}
@@ -562,6 +562,97 @@ public:
 		for (size_t i = 0; i < rows(); i++) {
 			for (size_t j = 0; j < cols(); j++) {
 				ret += (*this)(i, j);
+			}
+		}
+		return ret;
+	}
+	Matrix im2col(size_t N, size_t C, size_t H, size_t W,
+		size_t ksize, size_t stride = 1, size_t padding = 0) const {
+		assert(stride > 0);
+		assert(W + 2 * padding >= ksize && H + 2 * padding >= ksize);
+		size_t OW = (W + 2 * padding - ksize) / stride + 1;
+		size_t OH = (H + 2 * padding - ksize) / stride + 1;
+		size_t imSize = H * W;
+		size_t out_size = OH * OW;
+		size_t k_2 = ksize * ksize;
+		Matrix ret(N * out_size, C * k_2); // 这里就决定了切分方式
+		for (size_t n = 0; n < N; n++) {
+			for (size_t oh = 0; oh < OH; oh++) {
+				size_t head_y = oh * stride;
+				for (size_t ow = 0; ow < OW; ow++) {
+					size_t head_x = ow * stride;
+					size_t rr_idx = n * out_size + oh * OW + ow;
+					for (size_t c = 0; c < C; c++) {
+						for (size_t h = 0; h < ksize; h++) {
+							size_t cur_h = head_y + h;
+							size_t rc_idx_p = c * k_2 + h * ksize;
+							if (cur_h < padding || cur_h >= H + padding) {
+								for (size_t w = 0; w < ksize; w++) {
+									size_t rc_idx = rc_idx_p + w;
+									ret(rr_idx, rc_idx) = 0;
+								}
+							}
+							else {
+								size_t tc_idx_p = c * imSize + (cur_h - padding) * W;
+								for (size_t w = 0; w < ksize; w++) {
+									size_t cur_w = head_x + w;
+									size_t rc_idx = rc_idx_p + w;
+									size_t tc_idx = tc_idx_p + cur_w - padding;
+									if (cur_w < padding || cur_w >= W + padding)
+										ret(rr_idx, rc_idx) = 0;
+									else
+										ret(rr_idx, rc_idx) = (*this)(n, tc_idx);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return ret;
+	}
+	Matrix col2im(size_t N, size_t C, size_t H, size_t W,
+		size_t ksize, size_t stride = 1, size_t padding = 0) const {
+		// from ((N OH OW),(C K K)) to (N, (C H W))
+		assert(stride > 0);
+		assert(W + 2 * padding >= ksize && H + 2 * padding >= ksize);
+		size_t OW = (W + 2 * padding - ksize) / stride + 1;
+		size_t OH = (H + 2 * padding - ksize) / stride + 1;
+		size_t out_size = OH * OW;
+		size_t k_2 = ksize * ksize;
+		assert(rows() % out_size == 0);
+		assert(cols() % k_2 == 0);
+		assert(N == rows() / out_size);
+		assert(C == cols() / k_2);
+		size_t imSize = H * W;
+		Matrix ret = Matrix::zeroMatrix(N, C * H * W);
+		for (size_t n = 0; n < N; n++) {
+			for (size_t oh = 0; oh < OH; oh++) {
+				size_t head_y = oh * stride;
+				for (size_t ow = 0; ow < OW; ow++) {
+					size_t head_x = ow * stride;
+					size_t rr_idx = n * out_size + oh * OW + ow;
+					for (size_t c = 0; c < C; c++) {
+						for (size_t h = 0; h < ksize; h++) {
+							size_t cur_h = head_y + h;
+							size_t rc_idx_p = c * k_2 + h * ksize;
+							if (cur_h < padding || cur_h >= H + padding)
+								continue; // 整行都跳过
+							else {
+								size_t tc_idx_p = c * imSize + (cur_h - padding) * W;
+								for (size_t w = 0; w < ksize; w++) {
+									size_t cur_w = head_x + w;
+									size_t rc_idx = rc_idx_p + w;
+									size_t tc_idx = tc_idx_p + cur_w - padding;
+									if (cur_w < padding || cur_w >= W + padding)
+										continue;
+									else
+										ret(n, tc_idx) += (*this)(rr_idx, rc_idx);
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 		return ret;

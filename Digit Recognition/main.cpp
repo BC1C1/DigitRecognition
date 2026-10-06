@@ -1,5 +1,4 @@
-#include "MainWindow.h"
-#include <QtWidgets/QApplication>
+#include "iostream"
 
 #include "SuperParam.h"
 #include "Utils.h"
@@ -10,6 +9,7 @@
 
 #include "Linear.h"
 #include "ReLU.h"
+#include "Conv2D.h"
 #include "MSELoss.h"
 #include "CrossEntropyLoss.h"
 #include "Optimizer.h"
@@ -18,6 +18,9 @@
 
 #include <chrono>
 
+#include "MaxPoolTest.h"
+
+using namespace cfg;
 using Clock = std::chrono::high_resolution_clock;
 using Duration = std::chrono::duration<double, std::milli>; 
 using MsDur = std::chrono::duration<double, std::milli>;
@@ -27,45 +30,24 @@ void printMatrix(const Matrix& m) {
         QString line = "";
         for (size_t j = 0; j < m.cols(); j++)
             line.append(QString::number(m(i, j)) + " ");
-        qDebug() << line;
+        std::cout << line.toStdString();
     }
-    qDebug() << "\n";
-}
-
-using LayerPointer = std::shared_ptr<Layer>;
-LayerPointer linear(size_t in, size_t out) {
-    return std::make_shared<Linear>(in, out);
-}
-
-LayerPointer relu() {
-    return std::make_shared<ReLU>();
+    std::cout << "\n";
 }
 
 int main(int argc, char *argv[])
 {
-    size_t M = 60000;
     DataReader reader;
-    auto testImages = reader.readPicture(M, "D:\\code\\c\\Digit Recognition\\t10k-images.idx3-ubyte");
-    auto testLebels = reader.readLabel(M, "D:\\code\\c\\Digit Recognition\\t10k-labels.idx1-ubyte");
-    auto images = reader.readPicture(M, "D:\\code\\c\\Digit Recognition\\train-images.idx3-ubyte");
-    auto labels = reader.readLabel(M, "D:\\code\\c\\Digit Recognition\\train-labels.idx1-ubyte");
+    auto images = reader.readPicture(Mtrain, train_pic_route);
+    auto labels = reader.readLabel(Mtrain, train_lab_route);
 
     auto loss = std::make_shared<CrossEntropyLoss>();
     auto opt = std::make_shared<Optimizer>();
-    Model model;
-    model.setOptimizer(opt);
-    model.setLossFunction(loss);
-    model.addLayer(linear(784, 512));
-    model.addLayer(relu());
-    model.addLayer(linear(512, 128));
-    model.addLayer(relu());
-    model.addLayer(linear(128, 10));
+    auto model = Model::loadFromJson(cfg::getModel());
 
     std::mt19937 rng(42);
-    std::vector<size_t> indices(M);
+    std::vector<size_t> indices(Mtrain);
     std::iota(indices.begin(), indices.end(), 0);
-    size_t batchSize = 64;
-    int times = 3;
 
     // 全局累计，单位ms
     double sum_data = 0.0;
@@ -75,15 +57,15 @@ int main(int argc, char *argv[])
     double sum_opt = 0.0;
     int    batch_count = 0;
 
-    for (int epoch = 0; epoch < times; epoch++)
+    for (int epoch = 0; epoch < training_times; epoch++)
     {
         std::shuffle(indices.begin(), indices.end(), rng);
         double running_loss = 0.0;
         int cnt = 0;
 
-        for (size_t offset = 0; offset < M; offset += batchSize)
+        for (size_t offset = 0; offset < Mtrain; offset += batchSize)
         {
-            size_t cur = std::min(batchSize, M - offset);
+            size_t cur = std::min(batchSize, Mtrain - offset);
 
             // 1. 数据准备
             auto t0 = Clock::now();
@@ -94,23 +76,23 @@ int main(int argc, char *argv[])
 
             // 2. 网络forward
             auto t2 = Clock::now();
-            Matrix net_out = model.net_forward(batch_X);
+            Matrix net_out = model->net_forward(batch_X);
             auto t3 = Clock::now();
 
             // 3. loss forward
             auto t4 = Clock::now();
-            double L = model.loss_forward(net_out, batch_T);
+            double L = model->loss_forward(net_out, batch_T);
             auto t5 = Clock::now();
 
             // 4. loss backward + 网络backward
             auto t6 = Clock::now();
-            Matrix grad_loss = model.loss_backward();
-            model.net_backward(grad_loss);
+            Matrix grad_loss = model->loss_backward();
+            model->net_backward(grad_loss);
             auto t7 = Clock::now();
 
             // 5. optimizer更新
             auto t8 = Clock::now();
-            model.opt_step();
+            model->opt_step();
             auto t9 = Clock::now();
 
             // 转毫秒
@@ -130,38 +112,50 @@ int main(int argc, char *argv[])
             running_loss += L;
             cnt++;
         }
-        qDebug() << "epoch" << epoch << "avg loss:" << running_loss / cnt;
+        std::cout << "epoch" << epoch << "avg loss:" << running_loss / cnt << std::endl;
     }
 
-    qDebug() << "\n===== PER‑BATCH AVERAGE (ms) =====";
-    qDebug() << "data_prep   :" << sum_data / batch_count;
-    qDebug() << "net_forward :" << sum_netfw / batch_count;
-    qDebug() << "loss_forward:" << sum_lossfw / batch_count;
-    qDebug() << "net_backward:" << sum_netbw / batch_count;
-    qDebug() << "optimizer   :" << sum_opt / batch_count;
+    std::cout << "\n===== PER‑BATCH AVERAGE (ms) =====" << std::endl;
+    std::cout << "data_prep   :" << sum_data / batch_count << std::endl;
+    std::cout << "net_forward :" << sum_netfw / batch_count << std::endl;
+    std::cout << "loss_forward:" << sum_lossfw / batch_count << std::endl;
+    std::cout << "net_backward:" << sum_netbw / batch_count << std::endl;
+    std::cout << "optimizer   :" << sum_opt / batch_count << std::endl;
 
     // 验证
-    M = 10000;
-    auto result = model.predict(testImages);
+    auto testImages = reader.readPicture(Mtest, test_pic_route);
+    auto testLebels = reader.readLabel(Mtest, test_lab_route);
     size_t correct_cnt = 0;
-    for (size_t i = 0; i < M; i++) {
-        size_t pred = 0;
-        double cache = result(i, 0);
-        for (size_t j = 0; j < 10; j++) {
-            if (result(i, j) > cache) {
-                pred = j;
-                cache = result(i, j);
+    size_t total = 0;
+    for (size_t offset = 0; offset < Mtest; offset += test_chunk) {
+        size_t cur = std::min(test_chunk, Mtest - offset);
+        std::vector<size_t> idx(cur);
+        std::iota(idx.begin(), idx.end(), offset);
+        Matrix batch_X = testImages.sliceRowsByIndex(idx);
+        Matrix batch_T = testLebels.sliceRowsByIndex(idx);
+        Matrix result = model->predict(batch_X);
+        for (size_t i = 0; i < cur; i++) {
+            size_t pred = 0;
+            double cache = result(i, 0);
+            for (size_t j = 1; j < 10; j++) { 
+                if (result(i, j) > cache) {
+                    pred = j;
+                    cache = result(i, j);
+                }
             }
-        }
-        size_t real = 0;
-        for (size_t j = 0; j < 10; j++) {
-            if (testLebels(i, j) == 1) {
-                real = j;
-                break;
+            size_t real = 0;
+            for (size_t j = 0; j < 10; j++) {
+                if (batch_T(i, j) == 1) {
+                    real = j;
+                    break;
+                }
             }
+            if (pred == real) correct_cnt++;
+            total++;
         }
-        if (pred == real) correct_cnt++;
+        //std::cout << "processed" << total << "/" << Mtest
+        //    << "acc so far:" << (double)correct_cnt / total << std::endl;
     }
-    qDebug() << "acc is" << (double)correct_cnt / M;
 
+    std::cout << "final acc is" << (double)correct_cnt / total << std::endl;
 }

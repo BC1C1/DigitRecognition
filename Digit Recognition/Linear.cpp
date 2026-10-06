@@ -8,6 +8,8 @@ Linear::Linear(size_t input_dim, size_t output_dim)
 
 	dw = Matrix(output_dim, input_dim);
 	db = Matrix(1, output_dim);
+	vW = Matrix::zeroMatrix(output_dim, input_dim);
+	vb = Matrix::zeroMatrix(1, output_dim);
 }
 
 Matrix Linear::forward(const Matrix& x)
@@ -49,12 +51,12 @@ Matrix Linear::backward(const Matrix& gard)
 	return backwardRetCache;
 }
 
-void Linear::update(double learning_rate) {
-	for (size_t i = 0; i < W.rows(); i++)
-		for (size_t j = 0; j < W.cols(); j++)
-			W(i, j) -= learning_rate * dw(i, j);
-	for (size_t i = 0; i < b.rows(); i++)
-		for (size_t j = 0; j < b.cols(); j++)
-			b(i, j) -= learning_rate * db(i, j);
-	//W_T = W.transpose();
-}
+//void Linear::update(double learning_rate) {
+//	for (size_t i = 0; i < W.rows(); i++)
+//		for (size_t j = 0; j < W.cols(); j++)
+//			W(i, j) -= learning_rate * dw(i, j);
+//	for (size_t i = 0; i < b.rows(); i++)
+//		for (size_t j = 0; j < b.cols(); j++)
+//			b(i, j) -= learning_rate * db(i, j);
+//	//W_T = W.transpose();
+//}

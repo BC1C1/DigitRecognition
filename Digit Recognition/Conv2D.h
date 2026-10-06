@@ -16,6 +16,8 @@ public:
 		bias = Matrix::zeroMatrix(1, outputChannel);
 		dW = Matrix(outputChannel, inputChannel * ksize * ksize);
 		// db = Matrix(1, outputChannel); sum_cols 返回新矩阵，缓存等跑通再说
+		vW = Matrix::zeroMatrix(outputChannel, inputChannel * ksize * ksize);
+		vb = Matrix::zeroMatrix(1, outputChannel);
 	}
 	virtual Matrix forward(const Matrix& x) override {
 		assert(x.cols() == inputChannel * H * W);
@@ -24,7 +26,12 @@ public:
 		A = x.im2col(x.rows(), inputChannel, H, W, ksize, stride, padding);
 		Matrix out = Matrix::zeroMatrix(x.rows() * OH * OW, outputChannel);
 		Matrix::matmul_nt(A, kernel, out);
-		out = out + bias;
+		//out = out + bias;
+		for (size_t i = 0; i < out.rows(); i++) {
+			for (size_t j = 0; j < out.cols(); j++) {
+				out(i, j) += bias(0, j);
+			}
+		}
 		// reshape out
 		Matrix result(x.rows(), outputChannel * OH * OW);
 		for (size_t n = 0; n < x.rows(); n++) {
@@ -65,13 +72,16 @@ public:
 		Matrix::matmul_nn(dP, kernel, dA);
 		return dA.col2im(N, inputChannel, H, W, ksize, stride, padding);
 	}
-	virtual void update(double learning_rate) override {
-		for (size_t i = 0; i < kernel.rows(); i++)
-			for (size_t j = 0; j < kernel.cols(); j++)
-				kernel(i, j) -= learning_rate * dW(i, j);
-		for (size_t i = 0; i < bias.rows(); i++)
-			for (size_t j = 0; j < bias.cols(); j++)
-				bias(i, j) -= learning_rate * db(i, j);
+	//virtual void update(double learning_rate) override {
+	//	for (size_t i = 0; i < kernel.rows(); i++)
+	//		for (size_t j = 0; j < kernel.cols(); j++)
+	//			kernel(i, j) -= learning_rate * dW(i, j);
+	//	for (size_t i = 0; i < bias.rows(); i++)
+	//		for (size_t j = 0; j < bias.cols(); j++)
+	//			bias(i, j) -= learning_rate * db(i, j);
+	//}
+	virtual std::vector<ParamPtr> getParams() {
+		return std::vector<ParamPtr>{ { &kernel, &dW, &vW }, { &bias, &db, &vb }};
 	}
 private:
 	// param
@@ -82,6 +92,9 @@ private:
 	// cache
 	Matrix A;
 	Matrix dA;
+	// momentum
+	Matrix vW;
+	Matrix vb;
 
 	size_t stride;
 	size_t padding;

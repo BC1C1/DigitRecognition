@@ -196,7 +196,7 @@
       <Filter>Header Files\Test</Filter>
     </ClInclude>
     <ClInclude Include="MaxPool2D.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\Components\Layer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -6,19 +6,30 @@ class ReLU : public Layer
 {
 public:
 	virtual Matrix forward(const Matrix& x) override {
-		xCache = x.foreach_do([](double x) -> double {
-			return x > 0 ? x : 0;
-		});
+		if (xCache.rows() != x.rows() || xCache.cols() != x.cols())
+			xCache = Matrix(x.rows(), x.cols());
+		for (size_t i = 0; i < x.rows(); i++) {
+			for (size_t j = 0; j < x.cols(); j++) {
+				double value = x(i, j);
+				xCache(i, j) = value > 0 ? value : 0;
+			}
+		}
 		return xCache;
 	}
 	virtual Matrix backward(const Matrix& gard) override {
 		// xCache 中为0的认为是前面被掩盖了
-		auto f = [](double x) { return x == 0 ? 0 : 1; };
-		return Matrix::elementwiseMul(xCache.foreach_do(f), gard);
+		Matrix ret(gard.rows(), gard.cols());
+		for (size_t i = 0; i < xCache.rows(); i++) {
+			for (size_t j = 0; j < xCache.cols(); j++) {
+				ret(i, j) = xCache(i, j) == 0 ? 0 : gard(i, j);
+			}
+		}
+		return ret;
 	}
-	virtual void update(double learning_rate) {
+	//virtual void update(double learning_rate) override {
 
-	}
+	//}
+	virtual std::vector<ParamPtr> getParams() { return {}; }
 private:
 	Matrix xCache;
 };

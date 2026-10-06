@@ -9,7 +9,10 @@ public:
 
 	virtual Matrix forward(const Matrix& x) override;
 	virtual Matrix backward(const Matrix& grad) override;
-	virtual void update(double learning_rate) override;
+	//virtual void update(double learning_rate) override;
+	virtual std::vector<ParamPtr> getParams() {
+		return std::vector<ParamPtr>{ { &W, &dw, &vW }, { &b, &db, &vb } };
+	}
 
 private:
 	Matrix W;
@@ -21,6 +24,9 @@ private:
 
 	Matrix dw;
 	Matrix db;
+
+	Matrix vW;
+	Matrix vb;
 
 	//Matrix gard_T_cache;
 };

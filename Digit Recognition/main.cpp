@@ -18,13 +18,12 @@
 
 #include <chrono>
 
-#include "MaxPoolTest.h"
-
 using namespace cfg;
 using Clock = std::chrono::high_resolution_clock;
 using Duration = std::chrono::duration<double, std::milli>; 
 using MsDur = std::chrono::duration<double, std::milli>;
-
+double evaluate(std::shared_ptr<Model> model, const Matrix& images, const Matrix& labels, size_t M, size_t chunk = 1000);
+void augmentShift(Matrix& batch, size_t H, size_t W, int maxShift, std::mt19937& rng);
 void printMatrix(const Matrix& m) {
     for (size_t i = 0; i < m.rows(); i++) {
         QString line = "";
@@ -57,21 +56,33 @@ int main(int argc, char *argv[])
     double sum_opt = 0.0;
     int    batch_count = 0;
 
+    std::shuffle(indices.begin(), indices.end(), rng);
+    std::vector<size_t> validIdx(indices.begin(), indices.begin() + testForTrain);
+    Matrix validImgs = images.sliceRowsByIndex(validIdx);
+    Matrix validLabels = labels.sliceRowsByIndex(validIdx);
+    std::vector<size_t> train_idx(indices.begin() + testForTrain, indices.end());
+
+    double maxAcc = 0;
+    int patience = 3;
+    int noImprove = 0;
     for (int epoch = 0; epoch < training_times; epoch++)
     {
-        std::shuffle(indices.begin(), indices.end(), rng);
+        std::cout << "epoch: " << epoch << std::endl;
+        std::shuffle(train_idx.begin(), train_idx.end(), rng);
         double running_loss = 0.0;
         int cnt = 0;
-
-        for (size_t offset = 0; offset < Mtrain; offset += batchSize)
+        size_t trainSize = Mtrain - testForTrain;
+        for (size_t offset = 0; offset < trainSize; offset += batchSize)
         {
-            size_t cur = std::min(batchSize, Mtrain - offset);
+            size_t cur = std::min(batchSize, trainSize - offset);
 
             // 1. 数据准备
             auto t0 = Clock::now();
-            std::vector<size_t> batch_idx(indices.begin() + offset, indices.begin() + offset + cur);
+            std::vector<size_t> batch_idx(train_idx.begin() + offset, train_idx.begin() + offset + cur);
             Matrix batch_X = images.sliceRowsByIndex(batch_idx);
             Matrix batch_T = labels.sliceRowsByIndex(batch_idx);
+            // 数据增强：平移
+            augmentShift(batch_X, H, W, 3, rng);
             auto t1 = Clock::now();
 
             // 2. 网络forward
@@ -112,7 +123,21 @@ int main(int argc, char *argv[])
             running_loss += L;
             cnt++;
         }
-        std::cout << "epoch" << epoch << "avg loss:" << running_loss / cnt << std::endl;
+        double validAcc = evaluate(model, validImgs, validLabels, testForTrain);
+        std::cout << "avg loss: " << running_loss / cnt << std::endl;
+        std::cout << "now acc in train: " << evaluate(model, images, labels, trainSize) << std::endl;
+        std::cout << "now acc in valid: " << validAcc << std::endl;
+        if (validAcc > maxAcc)
+            maxAcc = validAcc;
+        else {
+            noImprove++;
+            if (noImprove > patience) {
+                noImprove = 0;
+                model->setLearningRate(model->getLearningRate() / 2);
+                std::cout << "now learning rate is: " << model->getLearningRate() << std::endl;
+            }
+        }
+        std::cout << std::endl;
     }
 
     std::cout << "\n===== PER‑BATCH AVERAGE (ms) =====" << std::endl;
@@ -158,4 +183,54 @@ int main(int argc, char *argv[])
     }
 
     std::cout << "final acc is" << (double)correct_cnt / total << std::endl;
+}
+
+double evaluate(std::shared_ptr<Model> model, const Matrix& images, const Matrix& labels,
+    size_t M, size_t chunk) {
+    size_t correct = 0, total = 0;
+    for (size_t offset = 0; offset < M; offset += chunk) {
+        size_t cur = std::min(chunk, M - offset);
+        std::vector<size_t> idx(cur);
+        std::iota(idx.begin(), idx.end(), offset);
+
+        Matrix batch_X = images.sliceRowsByIndex(idx);
+        Matrix batch_T = labels.sliceRowsByIndex(idx);
+        Matrix result = model->predict(batch_X);
+
+        for (size_t i = 0; i < cur; i++) {
+            size_t pred = 0;
+            double best = result(i, 0);
+            for (size_t j = 1; j < 10; j++)
+                if (result(i, j) > best) { pred = j; best = result(i, j); }
+
+            size_t real = 0;
+            for (size_t j = 0; j < 10; j++)
+                if (batch_T(i, j) == 1) { real = j; break; }
+
+            if (pred == real) correct++;
+            total++;
+        }
+    }
+    return (double)correct / total;
+}
+
+// 这个是平移，可以理解成不让模型记住数字在图片的绝对位置，而是学习有数字部分的图像特征
+void augmentShift(Matrix& batch, size_t H, size_t W, int maxShift, std::mt19937& rng)
+{
+    std::uniform_int_distribution<int> d(-maxShift, maxShift);
+    const size_t N = batch.rows();
+    Matrix out = Matrix::zeroMatrix(N, H * W);   // 平移空出来的位置就是背景 0
+    for (size_t n = 0; n < N; ++n) {
+        const int dx = d(rng), dy = d(rng);
+        for (int y = 0; y < (int)H; ++y) {
+            const int sy = y - dy;
+            if (sy < 0 || sy >= (int)H) continue;
+            for (int x = 0; x < (int)W; ++x) {
+                const int sx = x - dx;
+                if (sx < 0 || sx >= (int)W) continue;
+                out(n, (size_t)y * W + (size_t)x) = batch(n, (size_t)sy * W + (size_t)sx);
+            }
+        }
+    }
+    batch = out;   // 不能原地做：平移会覆盖还没读的像素
 }

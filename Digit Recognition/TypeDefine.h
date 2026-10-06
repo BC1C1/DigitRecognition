@@ -70,6 +70,9 @@ public:
 	size_t size() const {
 		return data->row * data->col;
 	}
+	double* raw_data() const {
+		return data->data;
+	}
 	// index
 	const double& operator()(size_t i, size_t j) const {
 		return data->data[index(i, j)];
@@ -360,7 +363,7 @@ public:
 
 		//std::memset(out_data, 0, (size_t)M * N * sizeof(double));
 
-#pragma omp parallel
+#pragma omp parallel if (M > 512)
 		{
 #pragma omp for schedule(dynamic)
 			for (int64_t bi = 0; bi < M; bi += blocksize) {
@@ -434,7 +437,7 @@ public:
 
 		//std::memset(out_data, 0, (size_t)M * N * sizeof(double));
 
-#pragma omp parallel
+#pragma omp parallel if (M > 512)
 		{
 #pragma omp for schedule(dynamic)
 			for (int64_t bi = 0; bi < M; bi += blocksize) {
@@ -486,7 +489,7 @@ public:
 
 		//std::memset(out_data, 0, (size_t)M * N * sizeof(double));
 
-#pragma omp parallel
+#pragma omp parallel if (M > 512)
 		{
 #pragma omp for schedule(dynamic)
 			for (int64_t bi = 0; bi < M; bi += blocksize) {

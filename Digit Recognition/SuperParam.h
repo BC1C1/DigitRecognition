@@ -11,39 +11,34 @@ namespace cfg {
     constexpr size_t Mtest = 10000;
     constexpr size_t test_chunk = 1000;
 
-    constexpr double learning_rate = 0.075;
+    constexpr double learning_rate = 0.015;
+    constexpr float momentum = 0.9;
     constexpr size_t batchSize = 64;
-    constexpr int training_times = 1;
+    constexpr int training_times = 30;
 
     constexpr size_t H = 28;
     constexpr size_t W = 28;
 
+    constexpr size_t testForTrain = 5000;
+
     inline const QJsonObject& getModel() {
         static QJsonObject obj = QJsonDocument::fromJson(R"({
-            "loss": "CrossEntropy",
-            "optimizer": "SGD",
-            "layers": [
-                { "type": "conv2d", "params": [
-                    { "inputdim":  1 }, { "outputdim": 32 },
-                    { "ksize": 3 }, { "stride": 1 }, { "padding": 1 }
-                ]},
-                { "type": "relu", "params": [] },
-                { "type": "maxpool2d", "params": [
-                    { "channel": 32 }, { "ksize": 2 }, { "stride": 2 }
-                ]},
-                { "type": "conv2d", "params": [
-                    { "inputdim":  32 }, { "outputdim": 64 },
-                    { "ksize": 3 }, { "stride": 1 }, { "padding": 1 }
-                ]},
-                { "type": "relu", "params": [] },
-                { "type": "maxpool2d", "params": [
-                    { "channel": 64 }, { "ksize": 2 }, { "stride": 2 }
-                ]},
-                { "type": "linear", "params": [ 3136, 128 ] },
-                { "type": "relu", "params": [] },
-                { "type": "linear", "params": [ 128, 10 ] }
-            ]
-        })").object();
+        "loss": "CrossEntropy",
+        "optimizer": "SGD",
+        "layers": [
+            { "type": "conv2d", "params": [
+                { "inputdim":  1 }, { "outputdim": 8 },
+                { "ksize": 3 }, { "stride": 1 }, { "padding": 1 }
+            ]},
+            { "type": "relu", "params": [] },
+            { "type": "maxpool2d", "params": [
+                { "channel": 8 }, { "ksize": 2 }, { "stride": 2 }
+            ]},
+            { "type": "linear", "params": [ 1568, 128 ] },
+            { "type": "relu", "params": [] },
+            { "type": "linear", "params": [ 128, 10 ] }
+        ]
+    })").object();
         return obj;
     }
 

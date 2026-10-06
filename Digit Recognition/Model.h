@@ -29,6 +29,9 @@ public:
 		op->addLayer(layer); 
 	}
 
+	void setLearningRate(double newLearningRate) { op->setLearningRate(newLearningRate); }
+	double getLearningRate() const { return op->getLR(); }
+
 	Matrix forward(const Matrix& input);
 	void backward(const Matrix& gard);
 	Matrix predict(const Matrix& input);

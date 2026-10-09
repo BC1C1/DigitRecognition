@@ -28,3 +28,6 @@ MNIST_data/
 *.obj
 *.exe
 *.ilk
+
+# ---- CMake 构建产物 ----
+build/

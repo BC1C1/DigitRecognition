@@ -13,14 +13,17 @@ public:
 	virtual std::vector<ParamPtr> getParams() {
 		return std::vector<ParamPtr>{ { &W, &dw, &vW }, { &b, &db, &vb } };
 	}
+private:
+	void launchForward(const Matrix& x);
+	void launchBackward(const Matrix& grad);
+	void reshape(size_t N);
 
 private:
 	Matrix W;
-	//Matrix W_T;
 	Matrix b;
-	Matrix cache;
-	Matrix forwardPartCache;    // forward 的输出缓冲（复用，避免每批分配）
-	Matrix backwardRetCache;    // backward 的返回值缓冲（复用）
+	Matrix cache;				// x
+	Matrix forwardCache;		// forward 
+	Matrix backwardRetCache;    // backward 
 
 	Matrix dw;
 	Matrix db;
@@ -29,5 +32,6 @@ private:
 	Matrix vb;
 
 	//Matrix gard_T_cache;
+	size_t I, O;
 };
 

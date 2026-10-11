@@ -42,8 +42,8 @@ namespace cfg {
         return obj;
     }
 
-    constexpr const char* train_pic_route = "D:\\code\\c\\Digit Recognition\\train-images.idx3-ubyte";
-    constexpr const char* train_lab_route = "D:\\code\\c\\Digit Recognition\\train-labels.idx1-ubyte";
-    constexpr const char* test_pic_route = "D:\\code\\c\\Digit Recognition\\t10k-images.idx3-ubyte";
-    constexpr const char* test_lab_route = "D:\\code\\c\\Digit Recognition\\t10k-labels.idx1-ubyte";
+    constexpr const char* train_pic_route = "D:\\code\\c\\MachineLearning_cmake\\train-images.idx3-ubyte";
+    constexpr const char* train_lab_route = "D:\\code\\c\\MachineLearning_cmake\\train-labels.idx1-ubyte";
+    constexpr const char* test_pic_route = "D:\\code\\c\\MachineLearning_cmake\\t10k-images.idx3-ubyte";
+    constexpr const char* test_lab_route = "D:\\code\\c\\MachineLearning_cmake\\t10k-labels.idx1-ubyte";
 }

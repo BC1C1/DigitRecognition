@@ -1,27 +1,30 @@
 #include "CrossEntropyLoss.h"
 
-float CrossEntropyLoss::forward(const Matrix& pred, const Matrix& real)
+double CrossEntropyLoss::forward(const Matrix& pred, const Matrix& real)
 {
     // pred is value
     size_t M = pred.rows(); // M point
     size_t N = pred.cols(); // N class
-    float loss = 0;
-    auto p = matrixLogSoftmaxWithCache(pred);
-    softmaxCache = p.second;
-    oneHotCache = real;
-    auto temp = p.first.elementwiseMul(real);
-    for (size_t i = 0; i < M; i++) {
-        for (size_t j = 0; j < N; j++) {
-            loss += temp(i, j);
-        }
-    }
-    return -loss / M;
+    reshape(M, N);
+    oneHotCache = real; // 不需要reshape
+    launchLogSoftmax(pred.data_gpu(), softmaxCache.data_gpu(), logsoftmaxCache.data_gpu(), M, N);
+    launchElementwiseMulInPlace(logsoftmaxCache.data_gpu(), real.data_gpu(), real.size());
+    double sum = launchSumKernel(logsoftmaxCache.data_gpu(), logsoftmaxCache.size()); 
+    return -sum / M;
 }
 
 Matrix CrossEntropyLoss::backward()
 {
-    auto d = softmaxCache - oneHotCache;
     size_t rows = softmaxCache.rows();
-    d = d.foreach_do([rows](float x) { return x / rows; });
-    return d;
+    launchSubInPlace(softmaxCache.data_gpu(), oneHotCache.data_gpu(), softmaxCache.size());
+    launchScaleMulInPlace(softmaxCache.data_gpu(), softmaxCache.size(), 1.0 / rows);
+    return softmaxCache;
+}
+
+void CrossEntropyLoss::reshape(size_t M, size_t N)
+{
+    if (logsoftmaxCache.rows() != M || logsoftmaxCache.cols() != N) {
+        logsoftmaxCache = Matrix(M, N);
+        softmaxCache = Matrix(M, N);
+   }
 }

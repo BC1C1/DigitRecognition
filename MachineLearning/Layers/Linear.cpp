@@ -1,9 +1,8 @@
 #include "Linear.h"
 
-Linear::Linear(size_t input_dim, size_t output_dim)
+Linear::Linear(size_t input_dim, size_t output_dim) : I(input_dim), O(output_dim)
 {
-	W = Matrix::randnMatrix(output_dim, input_dim) * std::sqrt(2.0 / input_dim);
-	//W_T = W.transpose();
+	W = Matrix::randnMatrix(output_dim, input_dim, std::sqrt(2.0 / input_dim));
 	b = Matrix::zeroMatrix(1, output_dim);
 
 	dw = Matrix(output_dim, input_dim);
@@ -14,49 +13,40 @@ Linear::Linear(size_t input_dim, size_t output_dim)
 
 Matrix Linear::forward(const Matrix& x)
 {
-	if (cache.rows() != x.rows() || cache.cols() != x.cols()) {
-		cache = Matrix(x.rows(), x.cols()); 
-		forwardPartCache = Matrix(x.rows(), W.rows()); // (B, O) 
-		backwardRetCache = Matrix(x.rows(), W.cols()); // (B, I) 
-	}
-
-	cache.fill(x);                  
-
-	forwardPartCache.fill(0);
-	Matrix::matmul_nt(x, W, forwardPartCache);
-	return forwardPartCache + b;
+	reshape(x.rows());
+	launchForward(x);
+	return forwardCache;
 }
 
 Matrix Linear::backward(const Matrix& gard)
 {
-	// 同理
-	if (backwardRetCache.rows() != gard.rows() || backwardRetCache.cols() != W.cols()) {
-		backwardRetCache = Matrix(gard.rows(), W.cols());   // (B, I)
-	}
-
-	const size_t N = gard.rows();
-	const size_t out_dim = gard.cols();
-
-	backwardRetCache.fill(0.0);
-	Matrix::matmul_nn(gard, W, backwardRetCache);
-
-	dw.fill(0.0);
-	Matrix::matmul_tn(gard, cache, dw);
-
-	db.fill(0.0);
-	for (size_t n = 0; n < N; n++)
-		for (size_t o = 0; o < out_dim; o++)
-			db(0, o) += gard(n, o);
-
+	launchBackward(gard);
 	return backwardRetCache;
 }
 
-//void Linear::update(double learning_rate) {
-//	for (size_t i = 0; i < W.rows(); i++)
-//		for (size_t j = 0; j < W.cols(); j++)
-//			W(i, j) -= learning_rate * dw(i, j);
-//	for (size_t i = 0; i < b.rows(); i++)
-//		for (size_t j = 0; j < b.cols(); j++)
-//			b(i, j) -= learning_rate * db(i, j);
-//	//W_T = W.transpose();
-//}
+void Linear::launchForward(const Matrix& x)
+{
+	assert(x.cols() == I);
+	/*cudaMemcpy(cache.data_gpu(), x.data_gpu(), sizeof(float) * x.size(), cudaMemcpyDeviceToDevice);*/
+	cache = x; // cache 如果后续明确只读，那么这样就足够，由Matrix的浅拷贝担保
+	launchLinearForward(x.data_gpu(), W.data_gpu(), b.data_gpu(), forwardCache.data_gpu(),
+		I, O, x.rows());
+}
+
+void Linear::launchBackward(const Matrix& grad)
+{
+	assert(grad.cols() == O);
+	launchMatmulNN(grad.data_gpu(), W.data_gpu(), backwardRetCache.data_gpu(), 
+		grad.rows(), I, O);
+	launchMatmulTN(grad.data_gpu(), cache.data_gpu(), dw.data_gpu(), O, I, grad.rows());
+	launchSumCols(grad.data_gpu(), db.data_gpu(), grad.rows(), O);
+}
+
+void Linear::reshape(size_t N)
+{
+	if (cache.rows() != N) {
+		cache = Matrix(N, I);
+		forwardCache = Matrix(N, O);
+		backwardRetCache = Matrix(N, I);
+	}
+}

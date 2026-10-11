@@ -8,7 +8,7 @@
 class CrossEntropyLoss : public LossFunction
 {
 public:
-	virtual float forward(const Matrix& pred, const Matrix& real) override;
+	virtual double forward(const Matrix& pred, const Matrix& real) override;
 	virtual Matrix backward() override;
 
 	static std::pair<Matrix, Matrix> matrixLogSoftmaxWithCache(const Matrix& inputs) {
@@ -39,7 +39,10 @@ public:
 		return { ret1, ret2 };
 	}
 private:
+	void reshape(size_t M, size_t N);
+private:
 	Matrix softmaxCache;
 	Matrix oneHotCache;
+	Matrix logsoftmaxCache;
 };
 

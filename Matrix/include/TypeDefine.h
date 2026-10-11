@@ -5,6 +5,11 @@
 #include <vector>
 #include <immintrin.h>
 #include <omp.h>
+#include <cuda_runtime.h>
+#include <curand.h>
+#include <exception>
+
+#include "cuda_bridge.h"
 
 inline float randn()
 {
@@ -13,39 +18,67 @@ inline float randn()
 	return dist(rng);
 }
 
+// 默认gpu，提供toHost
 struct MatrixData
 {
 	float* data;
+	float* hostData;
 	size_t row;
 	size_t col;
-	MatrixData(size_t row, size_t col) : row(row), col(col) {
-		data = new float[row * col]();
+	size_t ref_cnt;
+	MatrixData(size_t row, size_t col) : row(row), col(col), hostData(nullptr), data(nullptr), ref_cnt(1) {
+		if (row == 0 || col == 0) data = nullptr;
+		else
+		{
+			size_t bsize = sizeof(float) * row * col;
+			auto err = cudaMalloc(&data, bsize);
+			if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+		}
 	}
 	MatrixData(const MatrixData&) = delete;
 	MatrixData& operator=(const MatrixData&) = delete;
-	~MatrixData() { if (data) delete[] data; }
-	MatrixData* copy() const {
-		float* newData = new float[row * col]();
-		for (size_t i = 0; i < row * col; i++)
-			newData[i] = data[i];
-		return new MatrixData(newData, row, col);
-	}
-	void fill(const MatrixData* other) {
-		// 不检查，仅被Matrix调用
-		size_t size = row * col;
-		for (size_t i = 0; i < size; i++) {
-			data[i] = other->data[i];
+	~MatrixData() { 
+		if (data) { 
+			cudaFree(data); 
+			// data = nullptr; 
 		}
+		if (hostData) { 
+			delete[] hostData; 
+			// hostData = nullptr; 
+		}
+	} 
+	//MatrixData* copy() const {
+	//	float* newData = nullptr;
+	//	size_t bsize = sizeof(float) * row * col;
+	//	if (bsize != 0) {
+	//		auto err = cudaMalloc(&newData, bsize);
+	//		if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+	//		cudaMemcpy(newData, data, bsize, cudaMemcpyDeviceToDevice);
+	//	}
+	//	return new MatrixData(newData, row, col);
+	//}
+	void toHost() {
+		size_t bsize = sizeof(float) * row * col;
+		if (!data) { hostData = nullptr; return; }
+		if (!hostData) hostData = new float[row * col];
+		cudaMemcpy(hostData, data, bsize, cudaMemcpyDeviceToHost);
 	}
-private:
-	MatrixData(float* data, size_t row, size_t col) : row(row), col(col), data(data) {}
+
+	float* data_gpu() const { return data; }
+	float* data_cpu() const { return hostData; }
+	bool isHost() const { return hostData != nullptr; }
+	bool isValid() const { return data != nullptr; }
+//private:
+//	MatrixData(float* data, size_t row, size_t col) : row(row), col(col), data(data), hostData(nullptr),
+//	ref_cnt(1) {}
 };
 class Matrix {
 public:
 	Matrix() : data(new MatrixData(0, 0)) {}
 	Matrix(size_t row, size_t col) : data(new MatrixData(row, col)) {}
-	~Matrix() { delete data; }
-	Matrix(const Matrix& other) : data(other.data->copy()) {
+	~Matrix() { deref(); }
+	Matrix(const Matrix& other) : data(other.data) {
+		ref();
 	}
 	Matrix(Matrix&& other) noexcept : data(other.data) {
 		other.data = nullptr;
@@ -53,19 +86,34 @@ public:
 	Matrix& operator=(const Matrix& other) {
 		if (&other == this)
 			return *this;
-		delete data;
-		data = other.data->copy();
+		this->deref();
+		data = other.data;
+		this->ref();
 		return *this;
 	}
 	Matrix& operator=(Matrix&& other) noexcept {
 		if (&other == this)
 			return *this;
-		delete data;
+		this->deref();
 		data = other.data;
 		other.data = nullptr;
 		return *this;
 	}
+private:
+	inline void ref() const {
+		if (data)
+			data->ref_cnt++;
+	}
 
+	inline void deref() {
+		if (!data) return;
+		data->ref_cnt--;
+		if (data->ref_cnt == 0)
+		{
+			delete data;
+		}
+	}
+public:
 	// meta
 	size_t rows() const {
 		return data->row;
@@ -76,10 +124,37 @@ public:
 	size_t size() const {
 		return data->row * data->col;
 	}
+	float* data_gpu() const {
+		return data->data_gpu();
+	}
+	float* data_cpu() const {
+		data->toHost();
+		return data->data_cpu();
+	}
+
+	// factory
+	static Matrix zeroMatrix(size_t row, size_t col) {
+		Matrix ret(row, col);
+		launchFillInplace(ret.data_gpu(), ret.size(), 0.0f);
+		return ret;
+	}
+	static Matrix randnMatrix(size_t row, size_t col, float scale = 1.0) {
+		Matrix ret(row, col);
+		// 创建 cuRAND 生成器
+		curandGenerator_t gen;
+		curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
+		curandSetPseudoRandomGeneratorSeed(gen, 42);
+		curandGenerateNormal(gen, ret.data_gpu(), ret.size(), 0.0, scale);
+		curandDestroyGenerator(gen);
+		return ret;
+	}
+	
+	// 以下所有方法暂时没有调用者，暂时弃用。
+
 	float* raw_data() const {
 		return data->data;
 	}
-	// index
+	// index--只操作host的，是一个很重的操作，而且修改的都是副本，所以第一个重载无效
 	const float& operator()(size_t i, size_t j) const {
 		return data->data[index(i, j)];
 	}
@@ -87,6 +162,7 @@ public:
 		return data->data[index(i, j)];
 	}
 	// trans
+	// 通过算子实现，弃用
 	Matrix transpose() const
 	{
 		int64_t M = rows();
@@ -136,7 +212,7 @@ public:
 				ret.data->data[ret.index(i, j)] = func((*this)(i, j));
 		return ret;
 	}
-
+	// 弃用
 	Matrix fill(float value) const {
 		Matrix ret(rows(), cols());
 		for (size_t i = 0; i < rows(); i++)
@@ -146,201 +222,53 @@ public:
 	}
 
 	void fill(float value) {
-		const size_t r = rows(), c = cols();
-		float* p = data->data;
-		for (size_t i = 0; i < r; i++) {
-			float* rowp = p + i * c;
-			for (size_t j = 0; j < c; j++)
-				rowp[j] = value;
-		}
+		launchFillInplace(data->data_gpu(), rows() * cols(), value);
 	}
 
+	// 查清所有调用后弃用
 	void fill(const Matrix& other) {
 		assert(other.data != nullptr && "fill: 源为空");
 		assert(other.data != data && "fill: 源与目标共用同一块缓冲");
 		assert(rows() == other.rows() && cols() == other.cols() && "fill: 尺寸不一致");
-		data->fill(other.data);
+		// data->fill(other.data);
 	}
 
-	// factory
-	static Matrix zeroMatrix(size_t row, size_t col) {
-		Matrix ret(row, col);
-		std::memset(ret.data->data, 0, row * col * sizeof(float));
-		return ret;
-	}
-	static Matrix randnMatrix(size_t row, size_t col, float scale = 1.0) {
-		Matrix ret(row, col);
-		return ret.foreach_do([=](float) { return randn() * scale; });
-	}
 	// calculate
-	static Matrix add(const Matrix& A, const Matrix& B) {
-		// 不考虑某一矩阵行数为0
-		size_t M = A.rows();
-		size_t N = A.cols();
-		assert(N == B.cols() && "Dimension mismatch for matrix add");
-		if (M == B.rows()) {
-			Matrix ret(M, N);
-			for (size_t i = 0; i < M; i++)
-				for (size_t j = 0; j < N; j++)
-					ret.data->data[ret.index(i, j)] = A(i, j) + B(i, j);
-			return ret;
-		}
-		else if (M == 1) {
-			Matrix ret(B.rows(), N);
-			for (size_t i = 0; i < B.rows(); i++)
-				for (size_t j = 0; j < N; j++)
-					ret.data->data[ret.index(i, j)] = A(0, j) + B(i, j);
-			return ret;
-		}
-		else if (B.rows() == 1) {
-			Matrix ret(M, N);
-			for (size_t i = 0; i < M; i++)
-				for (size_t j = 0; j < N; j++)
-					ret.data->data[ret.index(i, j)] = A(i, j) + B(0, j);
-			return ret;
-		}
-		else
-			assert(false && "Dimension mismatch for matrix add");
-		return Matrix();
+	static void add(const Matrix& A, const Matrix& B, Matrix& out) {
+		// 暂时不广播
+		assert(A.rows() == B.rows());
+		assert(A.rows() == out.rows());
+		assert(A.cols() == B.cols());
+		assert(A.cols() == out.cols());
+		launchAdd(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows() * A.cols());
 	}
-	static Matrix sub(const Matrix& A, const Matrix& B) {
-		return Matrix::add(A, Matrix::scaleMul(B, -1));
+	static void sub(const Matrix& A, const Matrix& B, Matrix& out) {
+		assert(A.rows() == B.rows());
+		assert(A.rows() == out.rows());
+		assert(A.cols() == B.cols());
+		assert(A.cols() == out.cols());
+		launchSub(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows() * A.cols());
 	}
-	static Matrix scaleMul(const Matrix& A, float value) {
-		size_t M = A.rows();
-		size_t N = A.cols();
-		Matrix ret(M, N);
-		for (size_t i = 0; i < M; i++)
-			for (size_t j = 0; j < N; j++)
-				ret.data->data[ret.index(i, j)] = A(i, j) * value;
-		return ret;
+	static void scaleMul(const Matrix& A, float value, Matrix& out) {
+		assert(A.rows() == out.rows());
+		assert(A.cols() == out.cols());
+		launchScaleMul(A.data_gpu(), out.data_gpu(), A.rows() * A.cols(), value);
 	}
-	static Matrix elementwiseMul(const Matrix& A, const Matrix& B) {
-		size_t M = A.rows();
-		size_t N = A.cols();
-		assert(M == B.rows() && N == B.cols() && "Dimension mismatch for elementwise multiply");
-		Matrix ret(M, N);
-		for (size_t i = 0; i < M; i++)
-			for (size_t j = 0; j < N; j++)
-				ret.data->data[ret.index(i, j)] = A(i, j) * B(i, j);
-		return ret;
+	static void elementwiseMul(const Matrix& A, const Matrix& B, Matrix& out) {
+		assert(A.rows() == B.rows());
+		assert(A.rows() == out.rows());
+		assert(A.cols() == B.cols());
+		assert(A.cols() == out.cols());
+		launchElementwiseMul(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows() * A.cols());
 	}
 
-	static Matrix matmul(const Matrix& A, const Matrix& B)
+	// 所有matmul_*弃用，下面这个改成launch版本
+	static Matrix matmul(const Matrix& A, const Matrix& B, Matrix& out)
 	{
-		int64_t M = A.rows();
-		int64_t K = A.cols();
-		assert(K == B.rows() && "Dimension mismatch for matmul");
-		int64_t N = B.cols();
-		Matrix ret = Matrix::zeroMatrix(M, N);
-
-		const float* A_data = A.data->data;
-		const float* B_data = B.data->data;
-		float* ret_data = ret.data->data;
-
-		int64_t A_cols = A.cols();
-		int64_t B_cols = B.cols();
-		int64_t ret_cols = ret.cols();
-
-#pragma omp parallel num_threads(8)
-		{
-#pragma omp for schedule(dynamic)
-			for (int64_t bi = 0; bi < M; bi += blocksize)
-			{
-				int64_t Mend = std::min(M, bi + blocksize);
-				for (int64_t bj = 0; bj < N; bj += blocksize)
-				{
-					int64_t Nend = std::min(N, bj + blocksize);
-					for (int64_t bk = 0; bk < K; bk += blocksize)
-					{
-						int64_t Kend = std::min(K, bk + blocksize);
-
-						for (int64_t i = bi; i < Mend; i++)
-						{
-							// A第i行起始指针，i行固定，提到k循环外面
-							const float* A_row_i = A_data + i * A_cols;
-							float* ret_row_i = ret_data + i * ret_cols;
-
-							int64_t j = bj;
-							// j += 32，4组ymm，每组8个float
-							for (; j + 32 <= Nend; j += 32)
-							{
-								auto vc0 = _mm256_setzero_ps();
-								auto vc1 = _mm256_setzero_ps();
-								auto vc2 = _mm256_setzero_ps();
-								auto vc3 = _mm256_setzero_ps();
-
-								for (int64_t k = bk; k < Kend; k++)
-								{
-									float a_ik = A_row_i[k];
-									__m256 va0 = _mm256_set1_ps(a_ik);
-
-									// B的k行指针，k循环内只算一次k*B_cols
-									const float* B_row_k = B_data + k * B_cols;
-									const float* base = B_row_k + j;
-
-									__m256 vb0 = _mm256_loadu_ps(base);
-									__m256 vb1 = _mm256_loadu_ps(base + 8);
-									__m256 vb2 = _mm256_loadu_ps(base + 16);
-									__m256 vb3 = _mm256_loadu_ps(base + 24);
-
-									vc0 = _mm256_fmadd_ps(va0, vb0, vc0);
-									vc1 = _mm256_fmadd_ps(va0, vb1, vc1);
-									vc2 = _mm256_fmadd_ps(va0, vb2, vc2);
-									vc3 = _mm256_fmadd_ps(va0, vb3, vc3);
-								}
-
-								float* out_base = ret_row_i + j;
-								__m256 v0 = _mm256_loadu_ps(out_base);
-								__m256 v1 = _mm256_loadu_ps(out_base + 8);
-								__m256 v2 = _mm256_loadu_ps(out_base + 16);
-								__m256 v3 = _mm256_loadu_ps(out_base + 24);
-
-								v0 = _mm256_add_ps(v0, vc0);
-								v1 = _mm256_add_ps(v1, vc1);
-								v2 = _mm256_add_ps(v2, vc2);
-								v3 = _mm256_add_ps(v3, vc3);
-
-								_mm256_storeu_ps(out_base, v0);
-								_mm256_storeu_ps(out_base + 8, v1);
-								_mm256_storeu_ps(out_base + 16, v2);
-								_mm256_storeu_ps(out_base + 24, v3);
-							}
-
-							for (; j + 8 <= Nend; j += 8)
-							{
-								auto vc = _mm256_setzero_ps();
-								for (int64_t k = bk; k < Kend; k++)
-								{
-									float a_ik = A_row_i[k];
-									__m256 va = _mm256_set1_ps(a_ik);
-									const float* B_row_k = B_data + k * B_cols;
-									__m256 vb = _mm256_loadu_ps(B_row_k + j);
-									vc = _mm256_fmadd_ps(va, vb, vc);
-								}
-								float* out_ptr = ret_row_i + j;
-								__m256 vret = _mm256_loadu_ps(out_ptr);
-								vret = _mm256_add_ps(vret, vc);
-								_mm256_storeu_ps(out_ptr, vret);
-							}
-
-							for (; j < Nend; j++)
-							{
-								float sum = 0.0f;
-								for (int64_t k = bk; k < Kend; k++)
-								{
-									float a_ik = A_row_i[k];
-									const float* B_row_k = B_data + k * B_cols;
-									sum += a_ik * B_row_k[j];
-								}
-								ret_row_i[j] += sum;
-							}
-						}
-					}
-				}
-			}
-		}
-		return ret;
+		assert(A.rows() == out.rows());
+		assert(A.cols() == B.rows());
+		assert(B.cols() == out.cols());
+		launchMatmulNN(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows(), B.cols(), A.cols());
 	}
 
 	// 4 个 float 加起来
@@ -555,23 +483,15 @@ public:
 		}
 	}
 
-	Matrix sum_rows() const {
-		Matrix ret = Matrix::zeroMatrix(rows(), 1);
-		for (size_t i = 0; i < rows(); i++) {
-			for (size_t j = 0; j < cols(); j++) {
-				ret.data->data[ret.index(i, 0)] += (*this)(i, j);
-			}
-		}
-		return ret;
+	void sum_rows(Matrix& out) const {
+		assert(out.rows() == rows());
+		assert(out.cols() == 1);
+		launchSumRows(data_gpu(), out.data_gpu(), rows(), cols());
 	}
-	Matrix sum_cols() const {
-		Matrix ret = Matrix::zeroMatrix(1, cols());
-		for (size_t i = 0; i < rows(); i++) {
-			for (size_t j = 0; j < cols(); j++) {
-				ret.data->data[ret.index(0, j)] += (*this)(i, j);
-			}
-		}
-		return ret;
+	void sum_cols(Matrix& out) const {
+		assert(out.rows() == 1);
+		assert(out.cols() == cols());
+		launchSumCols(data_gpu(), out.data_gpu(), rows(), cols());
 	}
 	float sum() const {
 		float ret = 0;
@@ -582,6 +502,7 @@ public:
 		}
 		return ret;
 	}
+	
 	Matrix im2col(size_t N, size_t C, size_t H, size_t W,
 		size_t ksize, size_t stride = 1, size_t padding = 0) const {
 		assert(stride > 0);
@@ -673,21 +594,22 @@ public:
 		}
 		return ret;
 	}
-	Matrix operator+(const Matrix& other) const {
-		return Matrix::add(*this, other);
-	}
-	Matrix operator-(const Matrix& other) const {
-		return Matrix::sub(*this, other);
-	}
-	Matrix operator*(double scale) const {
-		return Matrix::scaleMul(*this, scale);
-	}
-	Matrix elementwiseMul(const Matrix& other) const {
-		return Matrix::elementwiseMul(*this, other);
-	}
-	Matrix matmul(const Matrix& other) const {
-		return Matrix::matmul(*this, other);
-	}
+	//// 下面所有函数查清调用后弃用，或者重写
+	//Matrix operator+(const Matrix& other) const {
+	//	return Matrix::add(*this, other);
+	//}
+	//Matrix operator-(const Matrix& other) const {
+	//	return Matrix::sub(*this, other);
+	//}
+	//Matrix operator*(double scale) const {
+	//	return Matrix::scaleMul(*this, scale);
+	//}
+	//Matrix elementwiseMul(const Matrix& other) const {
+	//	return Matrix::elementwiseMul(*this, other);
+	//}
+	//Matrix matmul(const Matrix& other) const {
+	//	return Matrix::matmul(*this, other);
+	//}
 private:
 	MatrixData* data;
 	static int64_t blocksize;

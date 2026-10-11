@@ -2,6 +2,7 @@
 
 #include "TypeDefine.h"
 #include <vector>
+#include "cuda_bridge.h"
 
 struct ParamPtr {
 	Matrix* value;

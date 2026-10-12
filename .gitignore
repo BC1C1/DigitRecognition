@@ -17,12 +17,19 @@ ui_*.h
 Makefile*
 *.pro.user*
 
-# ---- MNIST 数据集（体积大，可重新下载）----
+# ---- 数据集（体积大，可重新下载）----
+#
+# ⚠ 两套命名都要挡：同一个文件在不同发版里名字不同，
+#   只写点号那一套会让另一套整份（48MB）被 git add 带进仓库。
+#     MNIST          train-images.idx3-ubyte   （点号）
+#     Fashion-MNIST  train-images-idx3-ubyte   （连字符）
 MNIST_data.zip
 MNIST_data/
 *.gz
 *.idx3-ubyte
 *.idx1-ubyte
+*-idx3-ubyte
+*-idx1-ubyte
 
 # ---- 其它 ----
 *.obj
@@ -31,3 +38,4 @@ MNIST_data/
 
 # ---- CMake 构建产物 ----
 build/
+out/

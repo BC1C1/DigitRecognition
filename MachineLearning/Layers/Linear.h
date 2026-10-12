@@ -11,7 +11,7 @@ public:
 	virtual Matrix backward(const Matrix& grad) override;
 	//virtual void update(double learning_rate) override;
 	virtual std::vector<ParamPtr> getParams() {
-		return std::vector<ParamPtr>{ { &W, &dw, &vW }, { &b, &db, &vb } };
+		return std::vector<ParamPtr>{ { &W, &dw, &mW, &vW }, { &b, &db, &mb, &vb } };
 	}
 private:
 	void launchForward(const Matrix& x);
@@ -28,6 +28,8 @@ private:
 	Matrix dw;
 	Matrix db;
 
+	Matrix mW;
+	Matrix mb;
 	Matrix vW;
 	Matrix vb;
 

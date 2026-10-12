@@ -19,6 +19,8 @@ public:
 		bias = Matrix::zeroMatrix(1, outputChannel);
 		dW = Matrix(outputChannel, inputChannel * ksize * ksize);
 		db = Matrix(1, outputChannel); 
+		mW = Matrix::zeroMatrix(outputChannel, inputChannel * ksize * ksize);
+		mb = Matrix::zeroMatrix(1, outputChannel);
 		vW = Matrix::zeroMatrix(outputChannel, inputChannel * ksize * ksize);
 		vb = Matrix::zeroMatrix(1, outputChannel);
 	}
@@ -32,7 +34,7 @@ public:
 		return backwardCache;
 	}
 	virtual std::vector<ParamPtr> getParams() {
-		return std::vector<ParamPtr>{ { &kernel, &dW, &vW }, { &bias, &db, &vb }};
+		return std::vector<ParamPtr>{ { &kernel, &dW, &mW, &vW }, { &bias, &db, &mb, &vb }};
 	}
 private:
 	void launchForward(const Matrix& x) {
@@ -53,6 +55,11 @@ private:
 	}
 	void reshape(size_t N) {
 		if (N * OH * OW != A.rows()) {
+			A = Matrix();
+			dA = Matrix();
+			dP = Matrix();
+			forwardCache = Matrix();
+			backwardCache = Matrix();
 			A = Matrix(N * OH * OW, inputChannel * ksize * ksize);
 			dA = Matrix(N * OH * OW, inputChannel * ksize * ksize);
 			dP = Matrix(N * OH * OW, outputChannel);
@@ -73,6 +80,8 @@ private:
 	Matrix forwardCache;
 	Matrix backwardCache;
 	// momentum
+	Matrix mW;
+	Matrix mb;
 	Matrix vW;
 	Matrix vb;
 

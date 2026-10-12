@@ -2,20 +2,25 @@
 
 void Optimizer::step()
 {
+	t++;
+	float inv_bc1 = 1.0f / (1.0f - powf(b1, (float)t));
+	float inv_bc2 = 1.0f / (1.0f - powf(b2, (float)t));
 	for (const auto& l : layers) {
 		auto params = l->getParams();
 		// 通用
 		for (const auto& ps : params) {
-			auto& value = *ps.value;
-			auto& grad = *ps.grad;
-			auto& velocity = *ps.momentum;
-			assert(value.rows() == grad.rows());
-			assert(velocity.rows() == grad.rows());
-			assert(value.cols() == grad.cols());
-			assert(velocity.cols() == grad.cols());
-			// faster
-			launchGeneralUpdateWithMomentum(value.data_gpu(), grad.data_gpu(), velocity.data_gpu(),
-				value.size(), learning_rate, mu);
+			auto& w = *ps.w;
+			auto& g = *ps.g;
+			auto& m = *ps.m;
+			auto& v = *ps.v;
+			assert(w.rows() == g.rows());
+			assert(w.rows() == m.rows());
+			assert(w.rows() == v.rows());
+			assert(w.cols() == g.cols());
+			assert(w.cols() == m.cols());
+			assert(w.cols() == v.cols());
+			launchAdamUpdateKernel(w.data_gpu(), g.data_gpu(), m.data_gpu(), v.data_gpu(), w.size(),
+				learning_rate, b1, b2, epsilon, t, inv_bc1, inv_bc2);
 		}
 	}
 }

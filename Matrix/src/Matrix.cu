@@ -14,8 +14,9 @@ __global__ void fillInPlaceKernel(float* g, size_t n, float value) {
 }
 
 extern "C" void launchFillInplace(float* g, size_t n, float value) {
+	if (n == 0) return;   // grid=0 的 launch 会被 CUDA 拒绝，而 launch 不返回错误码 → 静默不执行
 	unsigned int threads = 256;
-	unsigned int blocks = (threads + n - 1) / threads;
+	unsigned int blocks = (n + threads - 1) / threads;
 	fillInPlaceKernel<<<blocks, threads>>>(g, n, value);
 }
 
@@ -339,9 +340,7 @@ extern "C" void launchSliceRowsByIndex(float* ga, float* gb, size_t M, size_t N,
 // random
 extern "C" void launchFillNormal(float* dst, size_t n, float mean, float scale) {
 	if (n == 0) return;
-
 	auto gen = getRandnGenerator();
-
 	if (n % 2 == 0) {
 		curandGenerateNormal(gen, dst, n, mean, scale);
 	}
@@ -351,7 +350,7 @@ extern "C" void launchFillNormal(float* dst, size_t n, float mean, float scale) 
 		size_t need = n + 1;
 		if (need > tmp_cap) {
 			if (tmp) cudaFree(tmp);
-			cudaMalloc(&tmp, need * sizeof(float));
+			cudaMalloc_throw(&tmp, need * sizeof(float));
 			tmp_cap = need;
 		}
 		curandGenerateNormal(gen, tmp, need, mean, scale);
@@ -655,6 +654,26 @@ extern "C" void launchGeneralUpdateWithMomentum(float* value, float* grad, float
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
 	generalUpdateLogicWithMomentum<<<blocks, threads>>>(value, grad, velocity, n, learning_rate, momentum);
+}
+
+// Adam update kernel
+__global__ void adamUpdateKernel(float* w, float* g, float* m, float* v, 
+	size_t n, float lr, float b1, float b2, float y, int t, float inv_bc1, float inv_bc2) {
+	unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i >= n) return;
+	// 每个参数
+	m[i] = b1 * m[i] + (1 - b1) * g[i];
+	v[i] = b2 * v[i] + (1 - b2) * g[i] * g[i];
+	auto m_hat = m[i] * inv_bc1;
+	auto v_hat = v[i] * inv_bc2;
+	w[i] -= lr * m_hat / (sqrtf(v_hat) + y);
+}
+
+extern "C" void launchAdamUpdateKernel(float* w, float* g, float* m, float* v, size_t n,
+	float lr, float b1, float b2, float y, int t, float inv_bc1, float inv_bc2) {
+	unsigned int threads = 256;
+	unsigned int blocks = (n + threads - 1) / threads;
+	adamUpdateKernel<<<blocks, threads>>>(w, g, m, v, n, lr, b1, b2, y, t, inv_bc1, inv_bc2);
 }
 
 // one hot and 

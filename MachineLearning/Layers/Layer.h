@@ -5,9 +5,10 @@
 #include "cuda_bridge.h"
 
 struct ParamPtr {
-	Matrix* value;
-	Matrix* grad;
-	Matrix* momentum;
+	Matrix* w;
+	Matrix* g;
+	Matrix* m;
+	Matrix* v;
 };
 
 class Layer

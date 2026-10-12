@@ -189,8 +189,8 @@ public:
 
 	Matrix sliceRowsByIndex(size_t* indexes_gpu, size_t n) const {
 		if (n == 0) return Matrix();
-		for (size_t i = 0; i < n; i++)
-			assert(indexes_gpu[i] < rows());
+		//for (size_t i = 0; i < n; i++)
+		//	assert(indexes_gpu[i] < rows());
 		size_t N = std::min(n, rows());
 		size_t c = cols();
 		Matrix ret(N, c);
@@ -256,7 +256,7 @@ public:
 	}
 
 	// 所有matmul_*弃用，下面这个改成launch版本
-	static Matrix matmul(const Matrix& A, const Matrix& B, Matrix& out)
+	static void matmul(const Matrix& A, const Matrix& B, Matrix& out)
 	{
 		assert(A.rows() == out.rows());
 		assert(A.cols() == B.rows());

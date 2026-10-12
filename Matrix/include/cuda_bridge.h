@@ -50,5 +50,7 @@ extern "C" {
 	// kernel for optimizer
 	void launchGeneralUpdateWithMomentum(float* value, float* grad, float* velocity,
 		size_t n, float learning_rate, float momentum);
+	void launchAdamUpdateKernel(float* w, float* g, float* m, float* v, size_t n,
+		float lr, float b1, float b2, float y, int t, float pow1, float pow2);
 	bool* launchOneHotAndCompare(float* result, float* real, size_t M, size_t N); // 记得delete[]
 }

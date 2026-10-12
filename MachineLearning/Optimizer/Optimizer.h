@@ -11,7 +11,7 @@
 class Optimizer : public SGD
 {
 public:
-	Optimizer() : learning_rate(cfg::learning_rate), mu(cfg::momentum) {}
+	Optimizer() : learning_rate(cfg::learning_rate), b1(cfg::momentum), b2(cfg::b2), epsilon(cfg::epsilon), t(0) {}
 
 	virtual void step() override;
 
@@ -22,7 +22,8 @@ public:
 	virtual float getLR() const override { return learning_rate; }
 private:
 	double learning_rate;
-	float mu;
+	float b1, b2, epsilon;
+	int t;
 	std::vector<std::shared_ptr<Layer>> layers;
 };
 

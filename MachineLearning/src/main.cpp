@@ -29,8 +29,8 @@ void augmentShift(Matrix& batch, size_t H, size_t W, int maxShift);
 int main(int argc, char *argv[])
 {
     DataReader reader;
-    auto images = reader.readPicture(Mtrain, train_pic_route);
-    auto labels = reader.readLabel(Mtrain, train_lab_route);
+    auto images = reader.readPicture(Mtrain, datasetDir, "train");
+    auto labels = reader.readLabel(Mtrain, datasetDir, "train");
 
     //auto loss = std::make_shared<CrossEntropyLoss>();
     //auto opt = std::make_shared<Optimizer>();
@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
             Matrix batch_X = images.sliceRowsByIndex(gidxes + offset, cur);
             Matrix batch_T = labels.sliceRowsByIndex(gidxes + offset, cur);
             // 数据增强：平移
-            augmentShift(batch_X, H, W, 3);
+            augmentShift(batch_X, 28, 28, 3);
 
             // 2. 网络forward
             Matrix net_out = model->net_forward(batch_X);
@@ -87,13 +87,12 @@ int main(int argc, char *argv[])
             // 5. optimizer更新
             model->opt_step();
 
-
             running_loss += L;
             cnt++;
         }
-        double validAcc = evaluate(model, validImgs, validLabels, testForTrain);
         std::cout << "avg loss: " << running_loss / cnt << std::endl;
-        std::cout << "now acc in train: " << evaluate(model, images, labels, trainSize) << std::endl;
+        double validAcc = evaluate(model, validImgs, validLabels, testForTrain, batchSize);
+        std::cout << "now acc in train: " << evaluate(model, images, labels, trainSize, batchSize) << std::endl;
         std::cout << "now acc in valid: " << validAcc << std::endl;
         if (validAcc > maxAcc) {
             maxAcc = validAcc; 
@@ -111,9 +110,10 @@ int main(int argc, char *argv[])
     }
     cudaFree(gidxes);
 
-    // 验证
-    auto testImages = reader.readPicture(Mtest, test_pic_route);
-    auto testLebels = reader.readLabel(Mtest, test_lab_route);
+    // 验证：必须读 t10k-* —— 之前这里读的是 train-*（函数内写死），
+    // 于是"测试集准确率"实际是训练集前 10000 张，而且静默通过。
+    auto testImages = reader.readPicture(Mtest, datasetDir, "t10k");
+    auto testLebels = reader.readLabel(Mtest, datasetDir, "t10k");
     auto acc = evaluate(model, testImages, testLebels, Mtest, test_chunk);
 
     std::cout << "final acc is " << acc << std::endl;

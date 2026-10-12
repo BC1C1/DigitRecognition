@@ -7,6 +7,8 @@ Linear::Linear(size_t input_dim, size_t output_dim) : I(input_dim), O(output_dim
 
 	dw = Matrix(output_dim, input_dim);
 	db = Matrix(1, output_dim);
+	mW = Matrix::zeroMatrix(output_dim, input_dim);
+	mb = Matrix::zeroMatrix(1, output_dim);
 	vW = Matrix::zeroMatrix(output_dim, input_dim);
 	vb = Matrix::zeroMatrix(1, output_dim);
 }

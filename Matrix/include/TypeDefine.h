@@ -5,11 +5,11 @@
 #include <vector>
 #include <immintrin.h>
 #include <omp.h>
-#include <cuda_runtime.h>
 #include <curand.h>
 #include <exception>
 
 #include "cuda_bridge.h"
+#include "cuda_utils.h"
 
 inline float randn()
 {
@@ -31,8 +31,7 @@ struct MatrixData
 		else
 		{
 			size_t bsize = sizeof(float) * row * col;
-			auto err = cudaMalloc(&data, bsize);
-			if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+			cudaMalloc_throw(&data, bsize);
 		}
 	}
 	MatrixData(const MatrixData&) = delete;
@@ -140,12 +139,7 @@ public:
 	}
 	static Matrix randnMatrix(size_t row, size_t col, float scale = 1.0) {
 		Matrix ret(row, col);
-		// 创建 cuRAND 生成器
-		curandGenerator_t gen;
-		curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
-		curandSetPseudoRandomGeneratorSeed(gen, 42);
-		curandGenerateNormal(gen, ret.data_gpu(), ret.size(), 0.0, scale);
-		curandDestroyGenerator(gen);
+		launchFillNormal(ret.data_gpu(), ret.size(), 0.0f, scale);
 		return ret;
 	}
 	
@@ -193,15 +187,14 @@ public:
 		return ret;
 	}
 
-	Matrix sliceRowsByIndex(const std::vector<size_t>& indexes) const {
-		size_t N = std::min(indexes.size(), rows());
+	Matrix sliceRowsByIndex(size_t* indexes_gpu, size_t n) const {
+		if (n == 0) return Matrix();
+		for (size_t i = 0; i < n; i++)
+			assert(indexes_gpu[i] < rows());
+		size_t N = std::min(n, rows());
 		size_t c = cols();
 		Matrix ret(N, c);
-		for (size_t i = 0; i < N; i++) {
-			assert(indexes[i] < rows() && "index out of range");
-			for (size_t j = 0; j < c; j++)
-				ret.data->data[ret.index(i, j)] = (*this)(indexes[i], j);
-		}
+		launchSliceRowsByIndex(data_gpu(), ret.data_gpu(), rows(), cols(), n, indexes_gpu);
 		return ret;
 	}
 	template <typename F>

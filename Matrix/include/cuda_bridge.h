@@ -25,6 +25,11 @@ extern "C" {
 		size_t ksize, size_t stride, size_t padding);
 	void launchCol2im(float* ga, float* gb, size_t N, size_t C, size_t H, size_t W, size_t OH, size_t OW,
 		size_t ksize, size_t stride, size_t padding);
+	void launchSliceRowsByIndex(float* ga, float* gb, size_t M, size_t N, size_t count, const size_t* idx);
+	void launchFillNormal(float* dst, size_t n, float mean, float scale);
+	void launchFillUniform(float* dst, size_t n);
+	void launchShiftImg(float* ga, float* gb,
+		size_t N, size_t H, size_t W, const float* random_list, int maxShift);
 	// kernel for layers
 	void launchLinearForward(float* x, float* W, float* b, float* result,
 		size_t in_dim, size_t out_dim, size_t N);
@@ -45,4 +50,5 @@ extern "C" {
 	// kernel for optimizer
 	void launchGeneralUpdateWithMomentum(float* value, float* grad, float* velocity,
 		size_t n, float learning_rate, float momentum);
+	bool* launchOneHotAndCompare(float* result, float* real, size_t M, size_t N); // 记得delete[]
 }

@@ -5,6 +5,8 @@ add_executable(MatrixTest
     include/GpuTestReduce.h
     include/GpuTestConv.h
     include/GpuTestModel.h
+    include/GpuTestSlice.h
+    include/GpuTestData.h
     include/GpuTest.h
     src/main.cpp
 )

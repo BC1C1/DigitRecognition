@@ -1,4 +1,4 @@
-#include <cuda_runtime.h>
+#include "cuda_utils.h"
 // all ptr is in gpu
 // operator never malloc. Temporary assignments don't count
 // default is out place, unless has "in place" suffix
@@ -217,7 +217,7 @@ __global__ void sumKernel(float* g, size_t n, double* result) {
 
 extern "C" double launchSumKernel(float* g, size_t n) {
 	double* result;
-	cudaMalloc(&result, sizeof(double));
+	cudaMalloc_throw(&result, sizeof(double));
 	cudaMemset(result, 0.0, sizeof(double));
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
@@ -315,6 +315,79 @@ extern "C" void launchCol2im(float* ga, float* gb, size_t N, size_t C, size_t H,
 		static_cast<unsigned int>((threads.z + N - 1) / threads.z)
 	};
 	col2imKernel<<<blocks, threads>>>(ga, gb, N, C, H, W, OH, OW, ksize, stride, padding);
+}
+
+// slice rows by index
+__global__ void sliceRowsByIndex(float* __restrict__ ga, float* __restrict__ gb, 
+	size_t count, size_t N, const size_t* index) {
+	unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
+	unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i >= count || j >= N) return;
+	// ga is (M, N), gb is (count, N)
+	gb[i * N + j] = ga[index[i] * N + j];
+}
+
+extern "C" void launchSliceRowsByIndex(float* ga, float* gb, size_t M, size_t N, size_t count, const size_t* idx) {
+	dim3 threads = { 16, 16 };
+	size_t tc = min(count, M);
+	unsigned int bx = static_cast<unsigned int>((threads.x + N - 1) / threads.x);
+	unsigned int by = static_cast<unsigned int>((threads.y + tc - 1) / threads.y);
+	dim3 blocks{ bx, by };
+	sliceRowsByIndex<<<blocks, threads>>>(ga, gb, tc, N, idx);
+}
+
+// random
+extern "C" void launchFillNormal(float* dst, size_t n, float mean, float scale) {
+	if (n == 0) return;
+
+	auto gen = getRandnGenerator();
+
+	if (n % 2 == 0) {
+		curandGenerateNormal(gen, dst, n, mean, scale);
+	}
+	else {
+		static float* tmp = nullptr;
+		static size_t tmp_cap = 0;
+		size_t need = n + 1;
+		if (need > tmp_cap) {
+			if (tmp) cudaFree(tmp);
+			cudaMalloc(&tmp, need * sizeof(float));
+			tmp_cap = need;
+		}
+		curandGenerateNormal(gen, tmp, need, mean, scale);
+		cudaMemcpy(dst, tmp, n * sizeof(float), cudaMemcpyDeviceToDevice);
+	}
+}
+
+extern "C" void launchFillUniform(float* dst, size_t n) {
+	if (n == 0) return;
+	auto gen = getRandnGenerator();
+	curandGenerateUniform(gen, dst, n);
+}
+
+// shift kernel
+__global__ void shiftImgKernel(float* __restrict__ ga, float* __restrict__ gb,
+	size_t N, size_t H, size_t W, const float* random_list, int maxShift) {
+	unsigned int n = blockIdx.z * blockDim.z + threadIdx.z;   
+	unsigned int h = blockIdx.y * blockDim.y + threadIdx.y;
+	unsigned int w = blockIdx.x * blockDim.x + threadIdx.x;
+	if (n >= N || h >= H || w >= W) return;
+	const int dw = (int)(random_list[2 * n] * (2 * maxShift + 1)) - maxShift;
+	const int dh = (int)(random_list[2 * n + 1] * (2 * maxShift + 1)) - maxShift;
+	const int sh = (int)h - dh;
+	const int sw = (int)w - dw;
+	const bool valid = (sh >= 0 && sh < (int)H && sw >= 0 && sw < (int)W);
+	gb[n * H * W + h * W + w] = valid ? ga[n * H * W + sh * W + sw] : 0.0f;
+}
+
+extern "C" void launchShiftImg(float* ga, float* gb, 
+	size_t N, size_t H, size_t W, const float* random_list, int maxShift) {
+	dim3 threads = { 16, 4, 4 };
+	unsigned int dx = static_cast<unsigned int>((threads.x + W - 1) / threads.x);
+	unsigned int dy = static_cast<unsigned int>((threads.y + H - 1) / threads.y);
+	unsigned int dz = static_cast<unsigned int>((threads.z + N - 1) / threads.z);
+	dim3 blocks = { dx, dy, dz };
+	shiftImgKernel<<<blocks, threads>>>(ga, gb, N, H, W, random_list, maxShift);
 }
 
 // linear forward kernel
@@ -502,7 +575,7 @@ __global__ void MSELossForwardKernel(float* __restrict__ pred, float* __restrict
 	unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
 	if (i >= M || j >= N) return;
 	float value = (pred[i * N + j] - real[i * N + j]);
-	value = value * value;
+	value = value * value / (M * N);
 	atomicAdd(loss, value);
 }
 
@@ -513,7 +586,7 @@ extern "C" double launchMSELossForward(float* pred, float* real, size_t M, size_
 		static_cast<unsigned int>((threads.y + M - 1) / threads.y)
 	};
 	double* r;
-	cudaMalloc(&r, sizeof(double));
+	cudaMalloc_throw(&r, sizeof(double));
 	cudaMemset(r, 0, sizeof(double));
 	MSELossForwardKernel<<<blocks, threads>>>(pred, real, M, N, r);
 	double result;
@@ -583,3 +656,33 @@ extern "C" void launchGeneralUpdateWithMomentum(float* value, float* grad, float
 	unsigned int blocks = (threads + n - 1) / threads;
 	generalUpdateLogicWithMomentum<<<blocks, threads>>>(value, grad, velocity, n, learning_rate, momentum);
 }
+
+// one hot and 
+__global__ void oneHotAndCompareKernel(float* __restrict__ result, float* __restrict__ real,
+	size_t M, size_t N, bool* retVector) {
+	unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i >= M) return;
+	float cache = result[i * N];
+	size_t pred_idx = 0;
+	size_t real_idx = 0;
+	for (size_t j = 0; j < N; j++) {
+		bool ib = result[i * N + j] > cache;
+		cache = max(cache, result[i * N + j]);
+		pred_idx = ib ? j : pred_idx;
+		real_idx = real[i * N + j] == 1 ? j : real_idx;
+	}
+	retVector[i] = real_idx == pred_idx;
+}
+
+extern "C" bool* launchOneHotAndCompare(float* result, float* real, size_t M, size_t N) {
+	unsigned int threads = 256;
+	unsigned int blocks = (threads + M - 1) / threads;
+	bool* gret;
+	cudaMalloc_throw(&gret, sizeof(bool) * M);
+	oneHotAndCompareKernel<<<blocks, threads>>>(result, real, M, N, gret);
+	bool* retVector = new bool[M];
+	cudaMemcpy(retVector, gret, sizeof(bool) * M, cudaMemcpyDeviceToHost);
+	cudaFree(gret);
+	return retVector;
+}
+

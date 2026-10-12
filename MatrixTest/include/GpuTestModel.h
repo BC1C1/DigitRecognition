@@ -15,10 +15,10 @@
 //         out[l][j] == log(cache[l][j])（两者互为 log/exp）
 //     只要有一个不成立，就说明两个输出装反了或者算错了。
 //
-//  2) launchMSELossForward 返回的是 Σ(pred-real)^2，**没有除以 M*N**；
-//     而 launchMSELossBackwardKernel 给出的是 2*(pred-real)/(M*N)。
-//     两边的归一化不一致 —— L5/L6 按**各自实际行为**对拍，并把这个不一致
-//     作为一条独立检查打出来，免得它被当成测试写错。
+//  2) launchMSELossForward 返回的是 (1/(M*N)) * Σ(pred-real)^2（均方误差），
+//     launchMSELossBackwardKernel 给出 2*(pred-real)/(M*N)。
+//     两者是配套的：后者正是前者对 pred 的导数。L5 特意挑了几个不等于 1 的
+//     M*N（640 / 771）来钉住"有没有除"—— 不除就差 M*N 倍，一眼能看出来。
 //
 //  【测试清单】
 //      L1  launchLinearForward
@@ -193,9 +193,12 @@ inline void l4_log_softmax()
 
 // ---------------------------------------------------------------------------
 // L5 / L6：MSE
-//   forward 返回 Σ(pred-real)^2（kernel 里没除 M*N）
+//   forward  返回 (1/(M*N)) * Σ(pred-real)^2 —— **均方**误差，已归一化
 //   backward 给出 2*(pred-real)/(M*N)
-//   这两个归一化不一致，测试按各自实际行为对拍，并把不一致单独报一次。
+//
+//   两者是配套的：backward 正是 forward 对 pred 的导数
+//   （d/dp [ (p-t)^2/(M*N) ] = 2(p-t)/(M*N)）。所以这一条同时钉住两件事：
+//   forward 有没有除 M*N、两边归一化口径是否一致。
 // ---------------------------------------------------------------------------
 inline void l5_l6_mse()
 {
@@ -221,9 +224,12 @@ inline void l5_l6_mse()
             sumSq += d * d;
         }
 
-        const double tol = relTol(sumSq);
-        G_CHECK(std::fabs(got - sumSq) < tol,
-                "forward M=%zu N=%zu 得到 %.6f，Σ(pred-real)^2 = %.6f", c.M, c.N, got, sumSq);
+        const double mean = sumSq / (double)(c.M * c.N);   // 期望的返回值
+
+        const double tol = relTol(mean);
+        G_CHECK(std::fabs(got - mean) < tol,
+                "forward M=%zu N=%zu 得到 %.6f，期望均方误差 %.6f（平方和 %.6f / %zu）",
+                c.M, c.N, got, mean, sumSq, c.M * c.N);
 
         // backward
         Matrix out(c.M, c.N);
@@ -241,13 +247,6 @@ inline void l5_l6_mse()
 
         const double e = maxDiff(hOut, wantB);
         G_CHECK(e < kFloatTol, "backward M=%zu N=%zu 误差 %.3e", c.M, c.N, e);
-
-        // 把"两边归一化不一致"单独报一次：forward 是未归一化的平方和，
-        // 如果用同一个尺度，它应当是 backward 积分的一半乘上 M*N —— 这里只提示。
-        const double normalized = sumSq / (double)(c.M * c.N);
-        if (c.M * c.N > 1)
-            printf("   [信息] M=%zu N=%zu forward 返回 %.6f（未除 M*N）；若按均值口径应为 %.6f\n",
-                   c.M, c.N, got, normalized);
     }
 }
 

@@ -12,11 +12,13 @@
 //  它们不是"测试失败了"，是"测试本身的前提没了"。等这些算子都有了对拍，
 //  那几个文件可以作为历史参考留着，但不再参与编译。
 //
-//  测试分五组，顺序按依赖从下往上：
+//  测试分七组，顺序按依赖从下往上：
 //      元素级   —— 所有算子都会用到的最底层
 //      GEMM     —— 三个乘法变体
 //      归约     —— sumRows / sumCols / sum
 //      卷积通路 —— im2col / col2im / convGemm / reshape / maxpool
+//      按索引挑行 —— sliceRowsByIndex（数据进网络的入口）
+//      数据侧   —— 平移增强 / 随机填充 / 随机矩阵
 //      层·损失·优化器 —— Linear / ReLU / logSoftmax / MSE / momentum
 // ============================================================================
 
@@ -25,6 +27,8 @@
 #include "GpuTestMatmul.h"
 #include "GpuTestReduce.h"
 #include "GpuTestConv.h"
+#include "GpuTestSlice.h"
+#include "GpuTestData.h"
 #include "GpuTestModel.h"
 
 namespace gputest {
@@ -60,6 +64,8 @@ inline int runAllGpuTests()
     runMatmulTests();
     runReduceTests();
     runConvTests();
+    runSliceTests();
+    runDataTests();
     runModelTests();
 
     printf("\n########## GPU 算子测试结束：失败 %d 条 ##########\n", fails());

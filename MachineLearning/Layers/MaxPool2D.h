@@ -44,8 +44,7 @@ private:
             if (maxIndex) {
                 cudaFree(maxIndex); maxIndex = nullptr;
             }
-            auto err = cudaMalloc(&maxIndex, sizeof(size_t) * N * channel * OH * OW);
-            if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
+            cudaMalloc_throw(&maxIndex, sizeof(size_t) * N * channel * OH * OW);
         }
     }
 private:

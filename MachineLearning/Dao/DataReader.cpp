@@ -42,14 +42,16 @@ Matrix DataReader::readPicture(size_t N, QString filename) {
     }
 
     Matrix ret({ N, (size_t)(rows * cols) });
+    float* cpuData = new float[N * rows * cols];
     const char* base = allPix.constData();
     for (size_t i = 0; i < N; i++) {
         const char* row = base + i * rows * cols;
         for (size_t j = 0; j < (size_t)(rows * cols); j++) {
-            ret(i, j) = double(static_cast<unsigned char>(row[j])) / 255.0;
+            cpuData[i * rows * cols + j] = double(static_cast<unsigned char>(row[j])) / 255.0;
         }
     }
-
+    cudaMemcpy(ret.data_gpu(), cpuData, sizeof(float) * ret.size(), cudaMemcpyHostToDevice);
+    delete[] cpuData;
     return ret;
 }
 
@@ -96,14 +98,14 @@ Matrix DataReader::readLabel(size_t N, QString filename)
     // 输出 N*10
     Matrix ret({ N, 10 });
     const unsigned char* base = reinterpret_cast<const unsigned char*>(labelBuf.constData());
-
+    float* cpuData = new float[N * 10];
     for (size_t i = 0; i < N; ++i)
     {
         unsigned char lab = base[i];
-
-        ret(i, lab) = 1.0;
+        cpuData[i * 10 + lab] = 1.0;
     }
-
+    cudaMemcpy(ret.data_gpu(), cpuData, sizeof(float) * ret.size(), cudaMemcpyHostToDevice);
+    delete[] cpuData;
     return ret;
 }
 

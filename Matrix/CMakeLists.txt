@@ -3,6 +3,7 @@ add_library(Matrix STATIC
     src/Matrix.cu
     include/TypeDefine.h
     include/cuda_bridge.h
+    include/cuda_utils.h
 )
 
 target_include_directories(Matrix PUBLIC

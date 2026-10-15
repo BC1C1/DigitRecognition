@@ -90,10 +90,10 @@ inline std::vector<float> runShift(const std::vector<float>& src_h,
     zeroDevice(dst);                    // 先清零：漏写的位置会保持 0，而 0 也是参照的合法值
 
     float* dRand = nullptr;
-    cudaMalloc_throw(&dRand, sizeof(float) * rand01.size());
+    cudaMallocAsync_throw(&dRand, sizeof(float) * rand01.size());
     cudaMemcpy(dRand, rand01.data(), sizeof(float) * rand01.size(), cudaMemcpyHostToDevice);
 
-    launchShiftImg(src.data_gpu(), dst.data_gpu(), N, H, W, dRand, maxShift);
+    launchShiftImg(src.data_gpu(), dst.data_gpu(), N, 1, H, W, dRand, maxShift);
     runAndCheck(what);
     cudaFree(dRand);
 

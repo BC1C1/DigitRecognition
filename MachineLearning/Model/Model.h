@@ -71,7 +71,7 @@ public:
 			assert(layerobj);
 			model->addLayer(layerobj);
 		}
-        // 在 loadFromJson 的最后
+        std::cout << "model is ready!" << std::endl;
 		return model;
 	}
 

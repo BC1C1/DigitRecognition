@@ -26,6 +26,8 @@ Model/Model.h
 config/SuperParam.h
 Dao/DataReader.cpp
 Dao/DataReader.h
+Dao/DataReader_CIFAR.h
+Dao/DataReader_CIFAR.cpp
 utils/Utils.cpp
 utils/Utils.h
 src/main.cpp

@@ -13,7 +13,7 @@ public:
     }
     ~MaxPool2D() {
         if (maxIndex) {
-            cudaFree(maxIndex); maxIndex = nullptr;
+            cudaFreeAsync_throw(maxIndex); maxIndex = nullptr;
         }
     }
 
@@ -42,9 +42,9 @@ private:
             maxCache = Matrix(N, channel * OH * OW);
             dXCache = Matrix(N, channel * H * W);
             if (maxIndex) {
-                cudaFree(maxIndex); maxIndex = nullptr;
+                cudaFreeAsync_throw(maxIndex); maxIndex = nullptr;
             }
-            cudaMalloc_throw(&maxIndex, sizeof(size_t) * N * channel * OH * OW);
+            cudaMallocAsync_throw(&maxIndex, sizeof(size_t) * N * channel * OH * OW);
         }
     }
 private:

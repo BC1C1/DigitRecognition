@@ -8,7 +8,7 @@ namespace cfg {
     constexpr quint32 magicSeed = 42;
     constexpr float M_PI = 3.1415926;
 
-    constexpr size_t Mtrain = 60000;
+    constexpr size_t Mtrain = 50000;
     constexpr size_t Mtest = 10000;
     constexpr size_t test_chunk = 1000;
 
@@ -17,7 +17,7 @@ namespace cfg {
     constexpr float b2 = 0.999;
     constexpr float epsilon = 1e-8;
     constexpr size_t batchSize = 64;
-    constexpr int training_times = 30;
+    constexpr int training_times = 1;
 
     constexpr size_t testForTrain = 5000;
 
@@ -68,24 +68,27 @@ namespace cfg {
     "optimizer": "Adam",
     "layers": [
         { "type": "conv2d", "params": {
-            "inputdim": 1, "inputH": 28, "inputW": 28,
+            "inputdim": 3, "inputH": 32, "inputW": 32,
             "outputdim": 32, "ksize": 3, "stride": 1, "padding": 1
         }},
         { "type": "relu", "params": {} },
-        { "type": "maxpool2d", "params": {
-            "ksize": 2, "stride": 2
-        }},
+        { "type": "maxpool2d", "params": { "ksize": 2, "stride": 2 }},
+        
         { "type": "conv2d", "params": {
-            "outputdim": 32, "ksize": 3, "stride": 1, "padding": 1
+            "outputdim": 64, "ksize": 3, "stride": 1, "padding": 1
         }},
         { "type": "relu", "params": {} },
-        { "type": "linear", "params": {
-            "outputdim": 128
+        { "type": "maxpool2d", "params": { "ksize": 2, "stride": 2 }},
+        
+        { "type": "conv2d", "params": {
+            "outputdim": 64, "ksize": 3, "stride": 1, "padding": 1
         }},
         { "type": "relu", "params": {} },
-        { "type": "linear", "params": {
-            "outputdim": 10
-        }}
+        { "type": "maxpool2d", "params": { "ksize": 2, "stride": 2 }},
+        
+        { "type": "linear", "params": { "outputdim": 128 }},
+        { "type": "relu", "params": {} },
+        { "type": "linear", "params": { "outputdim": 10 }}
     ]
 })").object();
         return obj;
@@ -99,6 +102,7 @@ namespace cfg {
     // 换数据集只改这一行。
     // 可选项：D:/code/c/MachineLearning_cmake/MNIST 或 .../fashion
     constexpr const char* datasetDir = "D:/code/c/MachineLearning_cmake/fashion";
+    const static QString cifarDatasetDir = "CIFAR-10-100";
     const static QString layersNameString = "layers";
     const static QString lossNameString = "loss";
     const static QString optimizerNameString = "optimizer";

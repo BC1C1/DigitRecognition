@@ -15,7 +15,8 @@ extern "C" {
 	void launchScaleMulInPlace(float* g, size_t n, float value);
 	void launchElementwiseMul(float* ga, float* gb, float* gc, size_t n);
 	void launchElementwiseMulInPlace(float* ga, float* gb, size_t n);
-	void launchMatmulNN(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K);
+	void launchMatmulNN(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K,
+		size_t BM, size_t BN, size_t BK);
 	void launchMatmulNT(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K);
 	void launchMatmulTN(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K);
 	void launchSumRows(float* ga, float* gb, size_t M, size_t N);
@@ -29,7 +30,7 @@ extern "C" {
 	void launchFillNormal(float* dst, size_t n, float mean, float scale);
 	void launchFillUniform(float* dst, size_t n);
 	void launchShiftImg(float* ga, float* gb,
-		size_t N, size_t H, size_t W, const float* random_list, int maxShift);
+		size_t N, size_t C, size_t H, size_t W, const float* random_list, int maxShift);
 	// kernel for layers
 	void launchLinearForward(float* x, float* W, float* b, float* result,
 		size_t in_dim, size_t out_dim, size_t N);

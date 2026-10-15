@@ -31,14 +31,14 @@ struct MatrixData
 		else
 		{
 			size_t bsize = sizeof(float) * row * col;
-			cudaMalloc_throw(&data, bsize);
+			cudaMallocAsync_throw(&data, bsize);
 		}
 	}
 	MatrixData(const MatrixData&) = delete;
 	MatrixData& operator=(const MatrixData&) = delete;
 	~MatrixData() { 
 		if (data) { 
-			cudaFree(data); 
+			cudaFreeAsync_throw(data); 
 			// data = nullptr; 
 		}
 		if (hostData) { 
@@ -46,16 +46,6 @@ struct MatrixData
 			// hostData = nullptr; 
 		}
 	} 
-	//MatrixData* copy() const {
-	//	float* newData = nullptr;
-	//	size_t bsize = sizeof(float) * row * col;
-	//	if (bsize != 0) {
-	//		auto err = cudaMalloc(&newData, bsize);
-	//		if (err != cudaSuccess) throw std::runtime_error(cudaGetErrorString(err));
-	//		cudaMemcpy(newData, data, bsize, cudaMemcpyDeviceToDevice);
-	//	}
-	//	return new MatrixData(newData, row, col);
-	//}
 	void toHost() {
 		size_t bsize = sizeof(float) * row * col;
 		if (!data) { hostData = nullptr; return; }
@@ -67,9 +57,6 @@ struct MatrixData
 	float* data_cpu() const { return hostData; }
 	bool isHost() const { return hostData != nullptr; }
 	bool isValid() const { return data != nullptr; }
-//private:
-//	MatrixData(float* data, size_t row, size_t col) : row(row), col(col), data(data), hostData(nullptr),
-//	ref_cnt(1) {}
 };
 class Matrix {
 public:
@@ -261,7 +248,7 @@ public:
 		assert(A.rows() == out.rows());
 		assert(A.cols() == B.rows());
 		assert(B.cols() == out.cols());
-		launchMatmulNN(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows(), B.cols(), A.cols());
+		launchMatmulNN(A.data_gpu(), B.data_gpu(), out.data_gpu(), A.rows(), B.cols(), A.cols(), 64, 64, 16);
 	}
 
 	// 4 个 float 加起来

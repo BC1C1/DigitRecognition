@@ -39,7 +39,7 @@ void Linear::launchBackward(const Matrix& grad)
 {
 	assert(grad.cols() == O);
 	launchMatmulNN(grad.data_gpu(), W.data_gpu(), backwardRetCache.data_gpu(), 
-		grad.rows(), I, O);
+		grad.rows(), I, O, 64, 64, 16);
 	launchMatmulTN(grad.data_gpu(), cache.data_gpu(), dw.data_gpu(), O, I, grad.rows());
 	launchSumCols(grad.data_gpu(), db.data_gpu(), grad.rows(), O);
 }

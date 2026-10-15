@@ -65,7 +65,7 @@ inline size_t* makeDeviceIndex(const std::vector<size_t>& idx)
 {
     if (idx.empty()) return nullptr;
     size_t* d = nullptr;
-    cudaMalloc_throw(&d, sizeof(size_t) * idx.size());
+    cudaMallocAsync_throw(&d, sizeof(size_t) * idx.size());
     cudaMemcpy(d, idx.data(), sizeof(size_t) * idx.size(), cudaMemcpyHostToDevice);
     return d;
 }

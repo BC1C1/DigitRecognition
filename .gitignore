@@ -30,6 +30,8 @@ MNIST_data/
 *.idx1-ubyte
 *-idx3-ubyte
 *-idx1-ubyte
+# CIFAR-10：6 个 .bin 合计约 184 MB，不进仓库
+CIFAR-10-100/
 
 # ---- 其它 ----
 *.obj

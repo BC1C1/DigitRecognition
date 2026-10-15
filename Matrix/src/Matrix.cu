@@ -17,7 +17,7 @@ extern "C" void launchFillInplace(float* g, size_t n, float value) {
 	if (n == 0) return;   // grid=0 的 launch 会被 CUDA 拒绝，而 launch 不返回错误码 → 静默不执行
 	unsigned int threads = 256;
 	unsigned int blocks = (n + threads - 1) / threads;
-	fillInPlaceKernel<<<blocks, threads>>>(g, n, value);
+	fillInPlaceKernel<<<blocks, threads, 0, getStream()>>>(g, n, value);
 }
 
 // add kernel
@@ -30,7 +30,7 @@ __global__ void addKernel(float* __restrict__ ga, float* __restrict__ gb, float*
 extern "C" void launchAdd(float* ga, float* gb, float* gc, size_t n) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	addKernel<<<blocks, threads>>>(ga, gb, gc, n);
+	addKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, gc, n);
 }
 
 // sub kernel
@@ -43,7 +43,7 @@ __global__ void subKernel(float* __restrict__ ga, float* __restrict__ gb, float*
 extern "C" void launchSub(float* ga, float* gb, float* gc, size_t n) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	subKernel<<<blocks, threads>>>(ga, gb, gc, n);
+	subKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, gc, n);
 }
 
 // sub in place kernel
@@ -56,7 +56,7 @@ __global__ void subInPlaceKernel(float* __restrict__ ga, float* __restrict__ gb,
 extern "C" void launchSubInPlace(float* ga, float* gb, size_t n) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	subInPlaceKernel<<<blocks, threads>>>(ga, gb, n);
+	subInPlaceKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, n);
 }
 
 // scale mul kernel
@@ -69,7 +69,7 @@ __global__ void scaleMulKernel(float* __restrict__ ga, float* __restrict__ gb, s
 extern "C" void launchScaleMul(float* ga, float* gb, size_t n, float value) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	scaleMulKernel<<<blocks, threads>>>(ga, gb, n, value);
+	scaleMulKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, n, value);
 }
 
 // scale mul in place kernel
@@ -82,7 +82,7 @@ __global__ void scaleMulInPlaceKernel(float* g, size_t n, float value) {
 extern "C" void launchScaleMulInPlace(float* g, size_t n, float value) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	scaleMulInPlaceKernel<<<blocks, threads>>>(g, n, value);
+	scaleMulInPlaceKernel<<<blocks, threads, 0, getStream()>>>(g, n, value);
 }
 
 // elementWise mul kernel
@@ -95,7 +95,7 @@ __global__ void elementwiseMulKernel(float* __restrict__ ga, float* __restrict__
 extern "C" void launchElementwiseMul(float* ga, float* gb, float* gc, size_t n) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	elementwiseMulKernel<<<blocks, threads>>>(ga, gb, gc, n);
+	elementwiseMulKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, gc, n);
 }
 
 // elementwise mul in place kernel
@@ -108,28 +108,190 @@ __global__ void elementwiseMulInPlaceKernel(float* __restrict__ ga, float* __res
 extern "C" void launchElementwiseMulInPlace(float* ga, float* gb, size_t n) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	elementwiseMulInPlaceKernel<<<blocks, threads>>>(ga, gb, n);
+	elementwiseMulInPlaceKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, n);
 }
 
 // matmul_nn kernel
 __global__ void matmulNNKernel(float* __restrict__ ga, float* __restrict__ gb, float* __restrict__ gc,
-	size_t M, size_t N, size_t K) {
-	unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
-	unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= M || j >= N) return;
-	float value = 0;
-	for (size_t k = 0; k < K; k++) {
-		value += ga[i * K + k] * gb[k * N + j];
+	size_t M, size_t N, size_t K, const size_t BM, const size_t BN, const size_t BK) {
+	constexpr int reg_row = 2; constexpr int reg_col = 2; constexpr int reg_K = 4;
+	constexpr int ret_size = reg_row * reg_col;
+	constexpr int regA_size = reg_K * reg_row;
+	constexpr int regB_size = reg_K * reg_col;
+	extern __shared__ float smem[];
+	float* blocka = smem, * blockb = smem + BM * BK;
+	float regA[regA_size], regB[regB_size], ret[ret_size];
+#pragma unroll
+	for (int i = 0; i < ret_size; i++) {
+		ret[i] = 0.0f;
 	}
-	gc[i * N + j] = value;
+	auto TK = (K + BK - 1) / BK;
+	// 搬运阶段重新分配工作，我们有BM*BK+BK*BN个数据要搬运，期望每个线程尽可能参与工作
+	// 我预期每个线程搬运两个，BM=BK=BN=16，一共256个线程，512个数据
+	unsigned int tid = threadIdx.y * blockDim.x + threadIdx.x; // 当前线程的编号
+	unsigned int nthreads = blockDim.x * blockDim.y; // 一共有这么多
+	// 给矩阵的块编号，先按行增加，再按列增加，假设ga和gb是32*32的矩阵，那么每个都有4个块
+	// 从ga的第(0, 0)个块搬运到blocka，gb的第(0, 0)个块搬运到blockb，运完算加到gc的第(0, 0)个块
+	// 从ga的第(0, 1)个块搬运到blocka，gb的第(1, 0)个块搬运到blockb，运完算加到gc的第(0, 0)个块，得到第1个结果
+	// 从ga的第(0, 0)个块搬运到blocka，gb的第(0, 1)个块搬运到blockb，运完算加到gc的第(0, 1)个块
+	// 从ga的第(0, 1)个块搬运到blocka，gb的第(1, 1)个块搬运到blockb，运完算加到gc的第(0, 1)个块，得到第2个结果
+	// 从ga的第(1, 0)个块搬运到blocka，gb的第(0, 0)个块搬运到blockb，运完算加到gc的第(1, 0)个块
+	// 从ga的第(1, 1)个块搬运到blocka，gb的第(1, 0)个块搬运到blockb，运完算加到gc的第(1, 0)个块，得到第3个结果
+	// 从ga的第(1, 0)个块搬运到blocka，gb的第(0, 1)个块搬运到blockb，运完算加到gc的第(1, 1)个块
+	// 从ga的第(1, 1)个块搬运到blocka，gb的第(0, 0)个块搬运到blockb，运完算加到gc的第(1, 1)个块，得到第4个结果
+	// 从ga的第(i, k)个块搬运到blocka，gb的第(k, j)个块搬运到blockb，运完算加到gc的第(i, j)个块，得到第i * TN + j + 1个结果
+	// 想办法得到这里ijk的值，我才能知道我要搬运哪些
+	// 我干脆先硬编码，然后再慢慢想如何一般化
+	int ty = threadIdx.y;
+	int tx = threadIdx.x;
+	auto ti = blockIdx.y; 
+	auto tj = blockIdx.x;
+	for (int tk = 0; tk < TK; tk++) {
+		// 现在只搬运
+		// 比如我现在正在搬第(0, 0)个a块和第(0, 0)个b块
+		// 对于我这个特定的线程，我的编号是0，我要搬的是a块的第0个和b块的第0个
+		// blocka[0] = ga[0 * K + 0];
+		// blockb[0] = gb[0 * N + 0];
+		// 一般化，我的编号是tid，我要搬的是第tid个
+		// blocka[tid] = ga[tid / BK * K + tid % BK];
+		// blockb[tid] = gb[tid / BN * N + tid % BN];
+		// 假如说其实我要搬运1024个，我就得跨过所有的编号去下一个
+		//for (size_t idx = tid; idx < BM * BK; idx += nthreads) {
+		//	blocka[idx] = ga[idx / BK * K + idx % BK];
+		//}
+		//for (size_t idx = tid; idx < BK * BN; idx += nthreads) {
+		//	blockb[idx] = gb[idx / BN * N + idx % BN];
+		//}
+		// 但是我打算搬第(0, 1)个a块和第(1, 0)个b块
+		//for (size_t idx = tid; idx < BM * BK; idx += nthreads) {
+		//	// a块是向右走的，所以加1在行上没有影响，在列上的影响是跨越BN列 <-- 这里有错误，A的形状混淆，是BK列
+		//	blocka[idx] = ga[idx / BK * K + (idx % BK + BN)];
+		//}
+		//for (size_t idx = tid; idx < BK * BN; idx += nthreads) {
+		//	// b块是向下走的，所以加1在列上没有影响，在行上的影响是跨越BM行 <-- 同上，这里是BK行
+		//	blockb[idx] = gb[(idx / BN + BM) * N + idx % BN];
+		//}
+		// 接着更一般化，打算搬第(0, tk)和(tk, 0)
+		//for (size_t idx = tid; idx < BM * BK; idx += nthreads) {
+		//	blocka[idx] = ga[(idx / BK) * K + (idx % BK + BN * tk)];
+		//}
+		//for (size_t idx = tid; idx < BK * BN; idx += nthreads) {
+		//	blockb[idx] = gb[(idx / BN + BM * tk) * N + idx % BN];
+		//}
+		// 继续一般化，刚才搞定了k的问题，如何搞定i和j的问题呢
+		// 其实搬到这里就足够算一次，我是说算第一个结果的第一部分
+		// 这意味着i和j只是标号，用于算某个偏移，而不是循环的一部分，到这里搬运就完成了
+		// 但是我必须知道i和j是怎么来的。有什么可以求得它们呢？
+		// i表示A矩阵的行块号，j表示B矩阵的列块号，哦，之前全局的i和j有办法，避免混淆把块的行号叫做ti，列号叫做tj
+		//unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
+		//unsigned int j = blockIdx.x * blockDim.x + threadIdx.x;
+		//auto ti = i / BM; auto tj = j / BN;
+		//for (size_t idx = tid; idx < BM * BK; idx += nthreads) {
+		//	// 这相当于给A矩阵一个向下的偏移，偏移量是ti*BM行
+		//	blocka[idx] = ga[((idx / BK) * K + (ti * BM)) + (idx % BK + BN * tk)];
+		//}
+		//for (size_t idx = tid; idx < BK * BN; idx += nthreads) {
+		//	// 同理，给B矩阵一个向右的偏移，偏移量是ti*BN列 <-- 错误，应该是tj
+		//	blockb[idx] = gb[(idx / BN + BM * tk) * N + (idx % BN + ti * BN)];
+		//}
+		// 更好的办法是人为规定一个块由一个block负责
+		//auto ti = blockIdx.y; auto tj = blockIdx.x;
+		//for (size_t idx = tid; idx < BM * BK; idx += nthreads) {
+		//	blocka[idx] = ga[((idx / BK + (ti * BM)) * K ) + (idx % BK + BN * tk)];
+		//}
+		//for (size_t idx = tid; idx < BK * BN; idx += nthreads) {
+		//	blockb[idx] = gb[(idx / BN + BM * tk) * N + (idx % BN + ti * BN)];
+		//}
+		// 这样就好了吗？总觉得可能没有这么规整，可能越界，因为最后的块可能不完整
+		// cpu版本上用stdmin来解决，这里填0
+
+		for (int idx = tid; idx < BM * BK; idx += nthreads) {
+			auto r = idx / BK + ti * BM;
+			auto c = idx % BK + BK * tk;
+			blocka[idx] = (r < M && c < K) ? ga[r * K + c] : 0.0f;
+		}
+		for (int idx = tid; idx < BK * BN; idx += nthreads) {
+			auto r = idx / BN + BK * tk;
+			auto c = idx % BN + tj * BN;
+			blockb[idx] = (r < K && c < N) ? gb[r * N + c] : 0.0f;
+		}
+		__syncthreads();
+		// 接着是计算
+		//for (int k = 0; k < BK; k++) {
+		//	value += blocka[ty * BK + k] * blockb[k * BN + tx];
+		//}
+		// 算更多值有助于减少从共享内存搬运，也可以理解成复用加载
+		// 考虑这样一个例子，共享内存里有两个4*4的矩阵
+		// 假如我一个线程只算一个数据，那么每次要从共享内存搬运4+4=8个数据，有16个输出，那么就要搬运16*8=128次
+		// 那么我计划在blocka搬运两行，然后在blockb搬运一列，而且blocka的两行在共享内存是连续的，编译器有可能优化成
+		// 类似同时加载的指令，这样稍微快一点。两个输出也是竖着的一组。搬运了12个数据，却有2个输出，一共12*8=96次
+		// 发现搬运减少。
+		//float regA[8], regB[4], ret[2];
+		//for (int ri = 0; ri < 8; ri++)
+		//	regA[ri] = blocka[ri];
+		//for (int rj = 0; rj < 4; rj++)
+		//	regB[rj] = blockb[rj * BN];
+		//for (int rt = 0; rt < 2; rt++) {
+		//	ret[rt] = 0;
+		//}
+		//for (int ci = 0; ci < 2; ci++) {
+		//	for (int k = 0; k < 4; k++) {
+		//		ret[ci] += regA[ci * 4 + k] * regB[k];
+		//	}
+		//}
+		// 其实不用太苛刻的要求连续加载，从共享内存加载已经足够快。更关键的是有多少寄存器可以用，这里没有试验过
+		// 无论怎样，稍微增大都是合理的，让我增大到4*4，也就是搬运4行A，4列B，输出16个值
+		// 深度思考中...(还是非常有喜感的)
+		// 已思考（耗时60分钟）
+		auto RK = (BK + reg_K - 1) / reg_K;
+#pragma unroll
+		for (int rk = 0; rk < RK; rk++) {
+			// load to registers
+#pragma unroll
+			for (int ri = 0; ri < regA_size; ri++) {
+				auto r = ri / reg_K + threadIdx.y * reg_row;
+				auto c = ri % reg_K + rk * reg_K;
+				regA[ri] = (r < BM && c < BK) ? blocka[r * BK + c] : 0.0f;
+			}
+#pragma unroll
+			for (int rj = 0; rj < regB_size; rj++) {
+				auto r = rj % reg_K + rk * reg_K;
+				auto c = rj / reg_K + threadIdx.x * reg_col;
+				regB[rj] = (r < BK && c < BN) ? blockb[r * BN + c] : 0.0f;
+			}
+			// calculate
+#pragma unroll
+			for (int ci = 0; ci < reg_row; ci++) {
+#pragma unroll
+				for (int cj = 0; cj < reg_col; cj++) {
+#pragma unroll
+					for (int k = 0; k < reg_K; k++) {
+						ret[ci * reg_col + cj] += regA[ci * reg_K + k] * regB[cj * reg_K + k];
+					}
+				}
+			}
+		}
+
+		__syncthreads();
+	}
+#pragma unroll
+	for (int ci = 0; ci < reg_row; ci++)
+#pragma unroll
+		for (int cj = 0; cj < reg_col; cj++) {
+			int row = ti * BM + threadIdx.y * reg_row + ci;
+			int col = tj * BN + threadIdx.x * reg_col + cj;
+			if (row < M && col < N)
+				gc[row * N + col] = ret[ci * reg_col + cj];
+		}
 }
 
-extern "C" void launchMatmulNN(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K) {
-	dim3 threads = { 16, 16 };
-	unsigned int bx = static_cast<unsigned int>((threads.x + N - 1) / threads.x);
-	unsigned int by = static_cast<unsigned int>((threads.y + M - 1) / threads.y);
-	dim3 blocks{ bx, by };
-	matmulNNKernel<<<blocks, threads>>>(ga, gb, gc, M, N, K);
+extern "C" void launchMatmulNN(float* ga, float* gb, float* gc, size_t M, size_t N, size_t K,
+	size_t BM, size_t BN, size_t BK) {
+	constexpr unsigned kRegRow = 2, kRegCol = 2;
+	dim3 threads = { (unsigned)BN / kRegCol, (unsigned)BM / kRegRow };
+	auto sharedSize = (BM * BK + BK * BN) * sizeof(float);
+	dim3 blocks{ (unsigned)((N + BN - 1) / BN), (unsigned)((M + BM - 1) / BM) };
+	matmulNNKernel<<<blocks, threads, sharedSize, getStream()>>>(ga, gb, gc, M, N, K, BM, BN, BK);
 }
 
 __global__ void matmulNTKernel(float* __restrict__ ga, float* __restrict__ gb, float* __restrict__ gc,
@@ -151,7 +313,7 @@ extern "C" void launchMatmulNT(float* ga, float* gb, float* gc, size_t M, size_t
 		static_cast<unsigned int>((threads.x + N - 1) / threads.x),
 		static_cast<unsigned int>((threads.y + M - 1) / threads.y)
 	};
-	matmulNTKernel<<<blocks, threads>>>(ga, gb, gc, M, N, K);
+	matmulNTKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, gc, M, N, K);
 }
 
 // matmul_tn kernel
@@ -174,7 +336,7 @@ extern "C" void launchMatmulTN(float* ga, float* gb, float* gc, size_t M, size_t
 		static_cast<unsigned int>((threads.x + N - 1) / threads.x),
 		static_cast<unsigned int>((threads.y + M - 1) / threads.y)
 	};
-	matmulTNKernel<<<blocks, threads>>>(ga, gb, gc, M, N, K);
+	matmulTNKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, gc, M, N, K);
 }
 
 // sum rows kernel, get Column vector
@@ -190,7 +352,7 @@ __global__ void sumRowsKernel(float* __restrict__ ga, float* __restrict__ gb, si
 extern "C" void launchSumRows(float* ga, float* gb, size_t M, size_t N) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + M - 1) / threads;
-	sumRowsKernel<<<blocks, threads>>>(ga, gb, M, N);
+	sumRowsKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, M, N);
 }
 
 // sum cols kernel, get row vector
@@ -206,7 +368,7 @@ __global__ void sumColsKernel(float* __restrict__ ga, float* __restrict__ gb, si
 extern "C" void launchSumCols(float* ga, float* gb, size_t M, size_t N) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + N - 1) / threads;
-	sumColsKernel<<<blocks, threads>>>(ga, gb, M, N);
+	sumColsKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, M, N);
 }
 
 // sum kernel
@@ -218,14 +380,14 @@ __global__ void sumKernel(float* g, size_t n, double* result) {
 
 extern "C" double launchSumKernel(float* g, size_t n) {
 	double* result;
-	cudaMalloc_throw(&result, sizeof(double));
+	cudaMallocAsync_throw(&result, sizeof(double));
 	cudaMemset(result, 0.0, sizeof(double));
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	sumKernel<<<blocks, threads>>>(g, n, result);
+	sumKernel<<<blocks, threads, 0, getStream()>>>(g, n, result);
 	double ret;
 	cudaMemcpy(&ret, result, sizeof(double), cudaMemcpyDeviceToHost);
-	cudaFree(result);
+	cudaFreeAsync_throw(result);
 	return ret;
 }
 
@@ -269,7 +431,7 @@ extern "C" void launchIm2col(float* ga, float* gb, size_t N, size_t C, size_t H,
 		static_cast<unsigned int>((threads.y + OH * OW - 1) / threads.y),
 		static_cast<unsigned int>((threads.z + N - 1) / threads.z)
 	};
-	im2colKernel<<<blocks, threads>>>(ga, gb, N, C, H, W, OH, OW, ksize, stride, padding);
+	im2colKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, N, C, H, W, OH, OW, ksize, stride, padding);
 }
 
 // col2im kernel: gb must be zero matrix
@@ -315,7 +477,7 @@ extern "C" void launchCol2im(float* ga, float* gb, size_t N, size_t C, size_t H,
 		static_cast<unsigned int>((threads.y + OH * OW - 1) / threads.y),
 		static_cast<unsigned int>((threads.z + N - 1) / threads.z)
 	};
-	col2imKernel<<<blocks, threads>>>(ga, gb, N, C, H, W, OH, OW, ksize, stride, padding);
+	col2imKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, N, C, H, W, OH, OW, ksize, stride, padding);
 }
 
 // slice rows by index
@@ -334,7 +496,7 @@ extern "C" void launchSliceRowsByIndex(float* ga, float* gb, size_t M, size_t N,
 	unsigned int bx = static_cast<unsigned int>((threads.x + N - 1) / threads.x);
 	unsigned int by = static_cast<unsigned int>((threads.y + tc - 1) / threads.y);
 	dim3 blocks{ bx, by };
-	sliceRowsByIndex<<<blocks, threads>>>(ga, gb, tc, N, idx);
+	sliceRowsByIndex<<<blocks, threads, 0, getStream()>>>(ga, gb, tc, N, idx);
 }
 
 // random
@@ -349,8 +511,8 @@ extern "C" void launchFillNormal(float* dst, size_t n, float mean, float scale) 
 		static size_t tmp_cap = 0;
 		size_t need = n + 1;
 		if (need > tmp_cap) {
-			if (tmp) cudaFree(tmp);
-			cudaMalloc_throw(&tmp, need * sizeof(float));
+			if (tmp) cudaFreeAsync_throw(tmp);
+			cudaMallocAsync_throw(&tmp, need * sizeof(float));
 			tmp_cap = need;
 		}
 		curandGenerateNormal(gen, tmp, need, mean, scale);
@@ -366,7 +528,7 @@ extern "C" void launchFillUniform(float* dst, size_t n) {
 
 // shift kernel
 __global__ void shiftImgKernel(float* __restrict__ ga, float* __restrict__ gb,
-	size_t N, size_t H, size_t W, const float* random_list, int maxShift) {
+	size_t N, size_t C, size_t H, size_t W, const float* random_list, int maxShift) {
 	unsigned int n = blockIdx.z * blockDim.z + threadIdx.z;   
 	unsigned int h = blockIdx.y * blockDim.y + threadIdx.y;
 	unsigned int w = blockIdx.x * blockDim.x + threadIdx.x;
@@ -376,17 +538,18 @@ __global__ void shiftImgKernel(float* __restrict__ ga, float* __restrict__ gb,
 	const int sh = (int)h - dh;
 	const int sw = (int)w - dw;
 	const bool valid = (sh >= 0 && sh < (int)H && sw >= 0 && sw < (int)W);
-	gb[n * H * W + h * W + w] = valid ? ga[n * H * W + sh * W + sw] : 0.0f;
+	for (size_t c = 0; c < C; c++)
+		gb[n * H * W * C + c * H * W + h * W + w] = valid ? ga[n * H * W * C + c * H * W + sh * W + sw] : 0.0f;
 }
 
 extern "C" void launchShiftImg(float* ga, float* gb, 
-	size_t N, size_t H, size_t W, const float* random_list, int maxShift) {
+	size_t N, size_t C, size_t H, size_t W, const float* random_list, int maxShift) {
 	dim3 threads = { 16, 4, 4 };
 	unsigned int dx = static_cast<unsigned int>((threads.x + W - 1) / threads.x);
 	unsigned int dy = static_cast<unsigned int>((threads.y + H - 1) / threads.y);
 	unsigned int dz = static_cast<unsigned int>((threads.z + N - 1) / threads.z);
 	dim3 blocks = { dx, dy, dz };
-	shiftImgKernel<<<blocks, threads>>>(ga, gb, N, H, W, random_list, maxShift);
+	shiftImgKernel<<<blocks, threads, 0, getStream()>>>(ga, gb, N, C, H, W, random_list, maxShift);
 }
 
 // linear forward kernel
@@ -411,7 +574,7 @@ extern "C" void launchLinearForward(float* x, float* W, float* b, float* result,
 	unsigned int bx = static_cast<unsigned int>((threads.x + out_dim - 1) / threads.x);
 	unsigned int by = static_cast<unsigned int>((threads.y + N - 1) / threads.y);
 	dim3 blocks{ bx, by };
-	linearForwardKernel<<<blocks, threads>>>(x, W, b, result, in_dim, out_dim, N);
+	linearForwardKernel<<<blocks, threads, 0, getStream()>>>(x, W, b, result, in_dim, out_dim, N);
 }
 
 // ReLU forward kernel
@@ -428,7 +591,7 @@ extern "C" void launchReLUForward(float* x, float* out, size_t N, size_t D) {
 		static_cast<unsigned int>((threads.x + D - 1) / threads.x),
 		static_cast<unsigned int>((threads.y + N - 1) / threads.y)
 	};
-	reLUForwardKernel<<<blocks, threads>>>(x, out, N, D);
+	reLUForwardKernel<<<blocks, threads, 0, getStream()>>>(x, out, N, D);
 }
 
 // ReLU backward kernel
@@ -446,7 +609,7 @@ extern "C" void launchReLUBackward(float* grad, float* cache, float* out, size_t
 		static_cast<unsigned int>((threads.x + D - 1) / threads.x),
 		static_cast<unsigned int>((threads.y + N - 1) / threads.y)
 	};
-	reLUBackwardKernel<<<blocks, threads>>>(grad, cache, out, N, D);
+	reLUBackwardKernel<<<blocks, threads, 0, getStream()>>>(grad, cache, out, N, D);
 }
 
 // conv2D forward gemm kernel
@@ -459,10 +622,31 @@ __global__ void conv2DGemmKernel(float* __restrict__ A, float* __restrict__ kern
 	unsigned int i = blockIdx.y * blockDim.y + threadIdx.y;
 	unsigned int n = blockIdx.x * blockDim.x + threadIdx.x;
 	if (o >= O || i >= OH * OW || n >= N) return;
-	float value = 0;
-	for (size_t k = 0; k < I * K * K; k++) {
-		value += A[(n * OH * OW + i) * (I * K * K) + k] * kernel[o * (I * K * K) + k];
+
+	const size_t IKK = I * K * K;                          // 内层长度
+	const float* Av = A + (n * OH * OW + i) * IKK;         // 本行的 A
+	const float* Kv = kernel + o * IKK;                    // 本行的权重
+
+	float value = 0.0f;
+
+	if (IKK % 4 == 0) {
+		const size_t IKK4 = IKK / 4;
+		float4 acc = make_float4(0.f, 0.f, 0.f, 0.f);      // 4 个独立累加器，顺便打断依赖链
+		for (size_t k = 0; k < IKK4; ++k) {
+			const float4 a = *reinterpret_cast<const float4*>(Av + k * 4);
+			const float4 b = *reinterpret_cast<const float4*>(Kv + k * 4);
+			acc.x = fmaf(a.x, b.x, acc.x);
+			acc.y = fmaf(a.y, b.y, acc.y);
+			acc.z = fmaf(a.z, b.z, acc.z);
+			acc.w = fmaf(a.w, b.w, acc.w);
+		}
+		value = (acc.x + acc.y) + (acc.z + acc.w);          // 树形归约
 	}
+	else {
+		for (size_t k = 0; k < IKK; ++k)
+			value += Av[k] * Kv[k];
+	}
+
 	value += bias[o];
 	out[i + o * OH * OW + n * OH * OW * O] = value;
 }
@@ -474,7 +658,7 @@ extern "C" void launchConv2DGemmKernel(float* A, float* kernel, float* bias, flo
 	unsigned int dy = static_cast<unsigned int>((threads.y + OH * OW - 1) / threads.y);
 	unsigned int dz = static_cast<unsigned int>((threads.z + O - 1) / threads.z);
 	dim3 blocks = { dx, dy, dz };
-	conv2DGemmKernel<<<blocks, threads>>>(A, kernel, bias, out, N, OH, OW, I, O, K);
+	conv2DGemmKernel<<<blocks, threads, 0, getStream()>>>(A, kernel, bias, out, N, OH, OW, I, O, K);
 }
 
 // conv2D backward reshape kernel
@@ -495,7 +679,7 @@ extern "C" void launchConv2DBackwardReshape(float* grad, float* dP,
 	unsigned int dy = static_cast<unsigned int>((threads.y + OH * OW - 1) / threads.y);
 	unsigned int dz = static_cast<unsigned int>((threads.z + N - 1) / threads.z);
 	dim3 blocks = { dx, dy, dz };
-	conv2DBackwardReshapeKernel<<<blocks, threads>>>(grad, dP, N, O, OH, OW);
+	conv2DBackwardReshapeKernel<<<blocks, threads, 0, getStream()>>>(grad, dP, N, O, OH, OW);
 }
 
 // maxpool2D forward kernel
@@ -537,7 +721,7 @@ extern "C" void launchMaxPool2DForward(float* x, float* out, size_t N, size_t C,
 	unsigned int dy = static_cast<unsigned int>((threads.y + C - 1) / threads.y);
 	unsigned int dz = static_cast<unsigned int>((threads.z + N - 1) / threads.z);
 	dim3 blocks = { dx, dy, dz };
-	maxPool2DForwardKernel<<<blocks, threads>>>(x, out, N, C, H, W, ksize, stride, OH, OW, maxIndex);
+	maxPool2DForwardKernel<<<blocks, threads, 0, getStream()>>>(x, out, N, C, H, W, ksize, stride, OH, OW, maxIndex);
 }
 
 // maxpool2D backward kernel: dx must be zero matrix
@@ -564,7 +748,7 @@ extern "C" void launchMaxPool2DBackward(float* grad, float* dX, size_t N, size_t
 	unsigned int dy = static_cast<unsigned int>((threads.y + C - 1) / threads.y);
 	unsigned int dz = static_cast<unsigned int>((threads.z + N - 1) / threads.z);
 	dim3 blocks = { dx, dy, dz };
-	maxPool2DBackwardKernel<<<blocks, threads>>>(grad, dX, N, C, H, W, ksize, stride, OH, OW, maxIndex);
+	maxPool2DBackwardKernel<<<blocks, threads, 0, getStream()>>>(grad, dX, N, C, H, W, ksize, stride, OH, OW, maxIndex);
 }
 
 // MSE lossfunction forward kernel
@@ -585,12 +769,12 @@ extern "C" double launchMSELossForward(float* pred, float* real, size_t M, size_
 		static_cast<unsigned int>((threads.y + M - 1) / threads.y)
 	};
 	double* r;
-	cudaMalloc_throw(&r, sizeof(double));
+	cudaMallocAsync_throw(&r, sizeof(double));
 	cudaMemset(r, 0, sizeof(double));
-	MSELossForwardKernel<<<blocks, threads>>>(pred, real, M, N, r);
+	MSELossForwardKernel<<<blocks, threads, 0, getStream()>>>(pred, real, M, N, r);
 	double result;
 	cudaMemcpy(&result, r, sizeof(double), cudaMemcpyDeviceToHost);
-	cudaFree(r);
+	cudaFreeAsync_throw(r);
 	return result;
 }
 
@@ -610,7 +794,7 @@ extern "C" void launchMSELossBackwardKernel(float* pred, float* real, float* out
 		static_cast<unsigned int>((threads.x + N - 1) / threads.x),
 		static_cast<unsigned int>((threads.y + M - 1) / threads.y)
 	};
-	MSELossBackwardKernel<<<blocks, threads>>>(pred, real, out, M, N);
+	MSELossBackwardKernel<<<blocks, threads, 0, getStream()>>>(pred, real, out, M, N);
 }
 
 // log-softmax kernel
@@ -636,7 +820,7 @@ __global__ void logSoftmaxKernel(float* __restrict__ input, float* __restrict__ 
 extern "C" void launchLogSoftmax(float* input, float* cache, float* out, size_t M, size_t N) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + M - 1) / threads;
-	logSoftmaxKernel<<<blocks, threads >>>(input, cache, out, M, N);
+	logSoftmaxKernel<<<blocks, threads, 0, getStream()>>>(input, cache, out, M, N);
 }
 
 // General update logic with momentum
@@ -653,7 +837,7 @@ extern "C" void launchGeneralUpdateWithMomentum(float* value, float* grad, float
 	size_t n, float learning_rate, float momentum) {
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + n - 1) / threads;
-	generalUpdateLogicWithMomentum<<<blocks, threads>>>(value, grad, velocity, n, learning_rate, momentum);
+	generalUpdateLogicWithMomentum<<<blocks, threads, 0, getStream()>>>(value, grad, velocity, n, learning_rate, momentum);
 }
 
 // Adam update kernel
@@ -673,7 +857,7 @@ extern "C" void launchAdamUpdateKernel(float* w, float* g, float* m, float* v, s
 	float lr, float b1, float b2, float y, int t, float inv_bc1, float inv_bc2) {
 	unsigned int threads = 256;
 	unsigned int blocks = (n + threads - 1) / threads;
-	adamUpdateKernel<<<blocks, threads>>>(w, g, m, v, n, lr, b1, b2, y, t, inv_bc1, inv_bc2);
+	adamUpdateKernel<<<blocks, threads, 0, getStream()>>>(w, g, m, v, n, lr, b1, b2, y, t, inv_bc1, inv_bc2);
 }
 
 // one hot and 
@@ -697,11 +881,11 @@ extern "C" bool* launchOneHotAndCompare(float* result, float* real, size_t M, si
 	unsigned int threads = 256;
 	unsigned int blocks = (threads + M - 1) / threads;
 	bool* gret;
-	cudaMalloc_throw(&gret, sizeof(bool) * M);
+	cudaMallocAsync_throw(&gret, sizeof(bool) * M);
 	oneHotAndCompareKernel<<<blocks, threads>>>(result, real, M, N, gret);
 	bool* retVector = new bool[M];
 	cudaMemcpy(retVector, gret, sizeof(bool) * M, cudaMemcpyDeviceToHost);
-	cudaFree(gret);
+	cudaFreeAsync_throw(gret);
 	return retVector;
 }
 

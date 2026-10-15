@@ -15,6 +15,7 @@
 #include "Optimizer.h"
 
 #include "DataReader.h"
+#include "DataReader_CIFAR.h"
 #include "cuda_bridge.h"
 
 #include <chrono>
@@ -24,13 +25,18 @@ using Clock = std::chrono::high_resolution_clock;
 using Duration = std::chrono::duration<double, std::milli>; 
 using MsDur = std::chrono::duration<double, std::milli>;
 double evaluate(std::shared_ptr<Model> model, const Matrix& images, const Matrix& labels, size_t M, size_t chunk = 1000);
-void augmentShift(Matrix& batch, size_t H, size_t W, int maxShift);
+void augmentShift(Matrix& batch, size_t C, size_t H, size_t W, int maxShift);
 
 int main(int argc, char *argv[])
 {
-    DataReader reader;
-    auto images = reader.readPicture(Mtrain, datasetDir, "train");
-    auto labels = reader.readLabel(Mtrain, datasetDir, "train");
+    cuda_initAll();
+    //DataReader reader;
+    //auto images = reader.readPicture(Mtrain, datasetDir, "train");
+    //auto labels = reader.readLabel(Mtrain, datasetDir, "train");
+    DataReader_CIFAR reader;
+    reader.readTrain();
+    auto& images = reader.trainData;
+    auto& labels = reader.trainLabel;
 
     //auto loss = std::make_shared<CrossEntropyLoss>();
     //auto opt = std::make_shared<Optimizer>();
@@ -43,11 +49,11 @@ int main(int argc, char *argv[])
     std::shuffle(indices.begin(), indices.end(), rng);
     std::vector<size_t> validIdx(indices.begin(), indices.begin() + testForTrain);
     size_t* temp;
-    cudaMalloc_throw(&temp, sizeof(size_t) * validIdx.size());
+    cudaMallocAsync_throw(&temp, sizeof(size_t) * validIdx.size());
     cudaMemcpy(temp, validIdx.data(), sizeof(size_t) * validIdx.size(), cudaMemcpyHostToDevice);
     Matrix validImgs = images.sliceRowsByIndex(temp, validIdx.size());
     Matrix validLabels = labels.sliceRowsByIndex(temp, validIdx.size());
-    cudaFree(temp);
+    cudaFreeAsync_throw(temp);
 
     std::vector<size_t> train_idx(indices.begin() + testForTrain, indices.end());
 
@@ -55,7 +61,7 @@ int main(int argc, char *argv[])
     int patience = 3;
     int noImprove = 0;
     size_t* gidxes;
-    cudaMalloc_throw(&gidxes, sizeof(size_t) * train_idx.size());
+    cudaMallocAsync_throw(&gidxes, sizeof(size_t) * train_idx.size());
     for (int epoch = 0; epoch < training_times; epoch++)
     {
         std::cout << "epoch: " << epoch << std::endl;
@@ -72,7 +78,7 @@ int main(int argc, char *argv[])
             Matrix batch_X = images.sliceRowsByIndex(gidxes + offset, cur);
             Matrix batch_T = labels.sliceRowsByIndex(gidxes + offset, cur);
             // 数据增强：平移
-            augmentShift(batch_X, 28, 28, 3);
+            augmentShift(batch_X, 3, 32, 32, 3);
 
             // 2. 网络forward
             Matrix net_out = model->net_forward(batch_X);
@@ -108,12 +114,13 @@ int main(int argc, char *argv[])
         }
         std::cout << std::endl;
     }
-    cudaFree(gidxes);
+    cudaFreeAsync_throw(gidxes);
 
-    // 验证：必须读 t10k-* —— 之前这里读的是 train-*（函数内写死），
-    // 于是"测试集准确率"实际是训练集前 10000 张，而且静默通过。
-    auto testImages = reader.readPicture(Mtest, datasetDir, "t10k");
-    auto testLebels = reader.readLabel(Mtest, datasetDir, "t10k");
+    //auto testImages = reader.readPicture(Mtest, datasetDir, "t10k");
+    //auto testLebels = reader.readLabel(Mtest, datasetDir, "t10k");
+    reader.readTest();
+    auto& testImages = reader.testData;
+    auto& testLebels = reader.testLabel;
     auto acc = evaluate(model, testImages, testLebels, Mtest, test_chunk);
 
     std::cout << "final acc is " << acc << std::endl;
@@ -127,7 +134,7 @@ double evaluate(std::shared_ptr<Model> model, const Matrix& images, const Matrix
         std::vector<size_t> idx(cur);
         std::iota(idx.begin(), idx.end(), offset);
         size_t* temp;
-        cudaMalloc_throw(&temp, sizeof(size_t) * idx.size());
+        cudaMallocAsync_throw(&temp, sizeof(size_t) * idx.size());
         cudaMemcpy(temp, idx.data(), sizeof(size_t) * idx.size(), cudaMemcpyHostToDevice);
         Matrix batch_X = images.sliceRowsByIndex(temp, idx.size());
         Matrix batch_T = labels.sliceRowsByIndex(temp, idx.size());
@@ -138,20 +145,21 @@ double evaluate(std::shared_ptr<Model> model, const Matrix& images, const Matrix
             if (*(ret + i)) correct++;
         }
         delete[] ret;
-        cudaFree(temp);
+        cudaFreeAsync_throw(temp);
     }
     return (double)correct / total;
 }
 
 // 这个是平移，可以理解成不让模型记住数字在图片的绝对位置，而是学习有数字部分的图像特征
-void augmentShift(Matrix& batch, size_t H, size_t W, int maxShift)
+void augmentShift(Matrix& batch, size_t C, size_t H, size_t W, int maxShift)
 {
+    assert(batch.cols() == C * H * W);
     const size_t N = batch.rows();
-    Matrix out = Matrix::zeroMatrix(N, H * W);   
+    Matrix out = Matrix::zeroMatrix(N, C * H * W);   
     float* random_values;
-    cudaMalloc_throw(&random_values, sizeof(float) * N * 2);
+    cudaMallocAsync_throw(&random_values, sizeof(float) * N * 2);
     launchFillUniform(random_values, N * 2);
-    launchShiftImg(batch.data_gpu(), out.data_gpu(), N, H, W, random_values, maxShift);
-    cudaFree(random_values);
+    launchShiftImg(batch.data_gpu(), out.data_gpu(), N, C, H, W, random_values, maxShift);
+    cudaFreeAsync_throw(random_values);
     batch = out;
 }

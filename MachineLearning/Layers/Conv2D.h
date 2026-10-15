@@ -48,18 +48,13 @@ private:
 		launchConv2DBackwardReshape(grad.data_gpu(), dP.data_gpu(), grad.rows(), outputChannel, OH, OW);
 		launchMatmulTN(dP.data_gpu(), A.data_gpu(), dW.data_gpu(), dW.rows(), dW.cols(), A.rows());
 		launchSumCols(dP.data_gpu(), db.data_gpu(), dP.rows(), outputChannel);
-		launchMatmulNN(dP.data_gpu(), kernel.data_gpu(), dA.data_gpu(), dA.rows(), dA.cols(), kernel.rows());
+		launchMatmulNN(dP.data_gpu(), kernel.data_gpu(), dA.data_gpu(), dA.rows(), dA.cols(), kernel.rows(), 64, 64, 16);
 		launchFillInplace(backwardCache.data_gpu(), backwardCache.size(), 0.0f);
 		launchCol2im(dA.data_gpu(), backwardCache.data_gpu(), grad.rows(), 
 			inputChannel, H, W, OH, OW, ksize, stride, padding);
 	}
 	void reshape(size_t N) {
 		if (N * OH * OW != A.rows()) {
-			A = Matrix();
-			dA = Matrix();
-			dP = Matrix();
-			forwardCache = Matrix();
-			backwardCache = Matrix();
 			A = Matrix(N * OH * OW, inputChannel * ksize * ksize);
 			dA = Matrix(N * OH * OW, inputChannel * ksize * ksize);
 			dP = Matrix(N * OH * OW, outputChannel);

@@ -1,0 +1,38 @@
+# ============================================================================
+#  .gitattributes —— 换行符统一
+#
+#  为什么需要它：这台 Windows 机器上 core.autocrlf 默认是 true，于是
+#  `git ls-files --eol` 会显示一堆「索引 LF / 工作区 CRLF」。一旦换机器、
+#  换编辑器、或者有人提交了一个 CRLF 文件，diff 里就会混进"只改了换行符"
+#  的噪音，review 时极难看。
+#
+#  好消息（加这个文件之前实测过）：仓库里 `i/crlf` 的数量是 **0**，
+#  索引中存的本来就是 LF。所以这条规则**不会产生任何 diff**，也不需要
+#  重写历史——它只是把"仓库里是 LF"这件事从巧合变成约定。
+#
+#  注意：.gitattributes 的优先级**高于** core.autocrlf，所以不用去动全局配置。
+# ============================================================================
+
+# ---- 文本文件：仓库内统一 LF，检出也是 LF ----
+* text=auto eol=lf
+
+# ---- 二进制文件：明确声明，禁止任何转换 ----
+*.bin            binary
+*.gz             binary
+*.idx3-ubyte     binary
+*.idx1-ubyte     binary
+*.exe            binary
+*.dll            binary
+*.lib            binary
+*.pdb            binary
+*.obj            binary
+*.cubin          binary
+*.ptx            binary
+*.nsys-rep       binary
+*.ncu-rep        binary
+*.sqlite         binary
+
+# ---- Windows 脚本：保持 CRLF ----
+*.bat            text eol=crlf
+*.cmd            text eol=crlf
+*.ps1            text eol=crlf

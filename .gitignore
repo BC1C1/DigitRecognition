@@ -1,43 +1,115 @@
-# ---- Visual Studio ----
-.vs/
-x64/
-Debug/
-Release/
-*.ipch
-*.suo
-*.user
-*.tlog
-*.log
-*.pdb
+# ============================================================================
+#  .gitignore —— 白名单模式
+#
+#  默认忽略一切，再逐个放行。这样"推上去的只有源码 + CMakeLists"是**结构上
+#  保证**的，而不是靠一条条列黑名单去追。
+#
+#  ⚠⚠ 代价：新增源文件类型（.cuh / .inl / .c / .hpp / .cmake ...）时，
+#       **必须回来在这里补一行**。否则它会被静默忽略，而且 `git status`
+#       不会有任何提示——这是白名单唯一的坑。
+# ============================================================================
 
-# ---- Qt / qmake 生成 ----
-moc_*.cpp
-qrc_*.cpp
-ui_*.h
-Makefile*
-*.pro.user*
+# ---- 1. 忽略一切 ----
+*
+# ---- 2. 但目录要放行，否则进不去子目录 ----
+!*/
+# ---- 3. 放行源码与工程文件 ----
+!*.h
+!*.cpp
+!*.cu
+!CMakeLists.txt
+!README.md
+!.gitignore
+!.gitattributes
+
+
+# ============================================================================
+#  下面是"为什么仓库里看不到这些东西"的说明。
+#
+#  白名单（上面 1/2/3）已经把下面全部挡住了，所以这段**当前不起作用**，
+#  它的用途是：将来若想改回黑名单模式，删掉上面三段、留下这段即可。
+# ============================================================================
 
 # ---- 数据集（体积大，可重新下载）----
-#
 # ⚠ 两套命名都要挡：同一个文件在不同发版里名字不同，
 #   只写点号那一套会让另一套整份（48MB）被 git add 带进仓库。
 #     MNIST          train-images.idx3-ubyte   （点号）
 #     Fashion-MNIST  train-images-idx3-ubyte   （连字符）
-MNIST_data.zip
+CIFAR-10-100/
 MNIST_data/
+MNIST_data.zip
 *.gz
 *.idx3-ubyte
 *.idx1-ubyte
 *-idx3-ubyte
 *-idx1-ubyte
-# CIFAR-10：6 个 .bin 合计约 184 MB，不进仓库
-CIFAR-10-100/
 
-# ---- 其它 ----
-*.obj
-*.exe
-*.ilk
-
-# ---- CMake 构建产物 ----
+# ---- CMake / 构建产物 ----
 build/
 out/
+x64/
+Debug/
+Release/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Testing/
+*.ninja
+.ninja_deps
+.ninja_log
+compile_commands.json
+
+# ---- 编译器输出 ----
+*.obj
+*.o
+*.exe
+*.lib
+*.a
+*.so
+*.dll
+*.exp
+*.pdb
+*.ilk
+*.iobj
+*.ipdb
+*.cubin
+*.ptx
+*.fatbin
+
+# ---- IDE / 编辑器 ----
+.vs/
+.vscode/
+.idea/
+.cache/
+.clangd/
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+Makefile*
+*.pro.user*
+*.autosave
+*.suo
+*.user
+*.ipch
+*.tlog
+*.sln
+*.vcxproj
+*.vcxproj.filters
+# Qt Creator 自动生成的 presets：含本机 QTDIR 绝对路径，不该入库
+CMakePresets.json
+CMakeUserPresets.json
+
+# ---- 性能分析输出 ----
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+prof.*
+*.sqlite
+
+# ---- 系统杂项 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
